@@ -123,6 +123,7 @@ func NewAuthnRequest() *AuthnRequest {
 		ProtocolBinding:             "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
 		Version:                     "2.0",
 		AssertionConsumerServiceURL: "", // caller must populate ar.AppSettings.AssertionConsumerServiceURL,
+		AssertionConsumerServiceIndex: "",
 		Issuer: Issuer{
 			XMLName: xml.Name{
 				Local: "saml:Issuer",
