@@ -63,11 +63,11 @@ func sign(xml string, privateKeyPath string, id string) (string, error) {
 	return samlSignedRequestXML, nil
 }
 
-// VerifyResponseSignature verify signature of a SAML 2.0 Response document
+// VerifyResponseSignature verify signature of a SAML 2.0 Response document element with the id attributeID
 // `publicCertPath` must be a path on the filesystem, xmlsec1 is run out of process
 // through `exec`
-func VerifyResponseSignature(xml string, publicCertPath string) error {
-	return verify(xml, publicCertPath, xmlResponseID)
+func VerifyResponseSignature(xml string, publicCertPath string, attributeID string) error {
+	return verify(xml, publicCertPath, attributeID)
 }
 
 // VerifyRequestSignature verify signature of a SAML 2.0 AuthnRequest document
