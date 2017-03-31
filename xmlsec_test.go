@@ -25,7 +25,7 @@ func TestRequest(t *testing.T) {
 	assert.NoError(err)
 	assert.NotEmpty(signedXml)
 
-	err = VerifyRequestSignature(signedXml, "./default.crt")
+	err = VerifyRequestSignature(signedXml, "./default.crt", "urn:oasis:names:tc:SAML:2.0:protocol:AuthnRequest")
 	assert.NoError(err)
 }
 
@@ -46,6 +46,6 @@ func TestResponse(t *testing.T) {
 	assert.NoError(err)
 	assert.NotEmpty(signedXml)
 
-	err = VerifyRequestSignature(signedXml, "./default.crt")
+	err = VerifyRequestSignature(signedXml, "./default.crt", "urn:oasis:names:tc:SAML:2.0:protocol:AuthnRequest")
 	assert.NoError(err)
 }
