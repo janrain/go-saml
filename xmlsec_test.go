@@ -10,7 +10,7 @@ import (
 
 func TestRequest(t *testing.T) {
 	assert := assert.New(t)
-	cert, err := util.LoadCertificate("./default.crt")
+	cert, err := util.LoadCertificate("./testdata/default.crt")
 	assert.NoError(err)
 
 	// Construct an AuthnRequest
@@ -21,17 +21,17 @@ func TestRequest(t *testing.T) {
 	assert.NoError(err)
 	xmlAuthnRequest := string(b)
 
-	signedXml, err := SignRequest(xmlAuthnRequest, "./default.key")
+	signedXml, err := Sign(xmlAuthnRequest, "./testdata/default.key", xmlRequestID)
 	assert.NoError(err)
 	assert.NotEmpty(signedXml)
 
-	err = VerifyRequestSignature(signedXml, "./default.crt", "urn:oasis:names:tc:SAML:2.0:protocol:AuthnRequest")
+	err = VerifySignature(signedXml, "./testdata/default.crt", xmlRequestID)
 	assert.NoError(err)
 }
 
 func TestResponse(t *testing.T) {
 	assert := assert.New(t)
-	cert, err := util.LoadCertificate("./default.crt")
+	cert, err := util.LoadCertificate("./testdata/default.crt")
 	assert.NoError(err)
 
 	// Construct an AuthnRequest
@@ -42,10 +42,10 @@ func TestResponse(t *testing.T) {
 	assert.NoError(err)
 	xmlResponse := string(b)
 
-	signedXml, err := SignResponse(xmlResponse, "./default.key")
+	signedXml, err := Sign(xmlResponse, "./testdata/default.key", xmlResponseID)
 	assert.NoError(err)
 	assert.NotEmpty(signedXml)
 
-	err = VerifyRequestSignature(signedXml, "./default.crt", "urn:oasis:names:tc:SAML:2.0:protocol:AuthnRequest")
+	err = VerifySignature(signedXml, "./testdata/default.crt", xmlResponseID)
 	assert.NoError(err)
 }

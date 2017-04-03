@@ -9,11 +9,11 @@ import (
 func TestGetSignedRequest(t *testing.T) {
 	assert := assert.New(t)
 	sp := ServiceProviderSettings{
-		PublicCertPath:              "./default.crt",
-		PrivateKeyPath:              "./default.key",
+		PublicCertPath:              "./testdata/default.crt",
+		PrivateKeyPath:              "./testdata/default.key",
 		IDPSSOURL:                   "http://www.onelogin.net",
 		IDPSSODescriptorURL:         "http://www.onelogin.net",
-		IDPPublicCertPath:           "./default.crt",
+		IDPPublicCertPath:           "./testdata/default.crt",
 		AssertionConsumerServiceURL: "http://localhost:8000/auth/saml/name",
 		SPSignRequest:               true,
 	}
@@ -26,7 +26,7 @@ func TestGetSignedRequest(t *testing.T) {
 	assert.NoError(err)
 	assert.NotEmpty(signedXML)
 
-	err = VerifySignature(signedXML, sp.PublicCertPath)
+	err = authnRequest.Validate(sp.PublicCertPath)
 	assert.NoError(err)
 }
 
@@ -35,7 +35,7 @@ func TestGetUnsignedRequest(t *testing.T) {
 	sp := ServiceProviderSettings{
 		IDPSSOURL:                   "http://www.onelogin.net",
 		IDPSSODescriptorURL:         "http://www.onelogin.net",
-		IDPPublicCertPath:           "./default.crt",
+		IDPPublicCertPath:           "./testdata/default.crt",
 		AssertionConsumerServiceURL: "http://localhost:8000/auth/saml/name",
 		SPSignRequest:               false,
 	}
