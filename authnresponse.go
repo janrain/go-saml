@@ -10,44 +10,38 @@ import (
 )
 
 const (
-	xmlResponseID = "urn:oasis:names:tc:SAML:2.0:protocol:Response"
-	xmlResponseAssertionID = "urn:oasis:names:tc:SAML:2.0:assertion"
+	xmlResponseID          = "urn:oasis:names:tc:SAML:2.0:protocol:Response"
+	xmlResponseAssertionID = "Assertion"
 )
 
-func ParseCompressedEncodedResponse(b64ResponseXML string) (*Response, error) {
-	authnResponse := Response{}
-	compressedXML, err := base64.StdEncoding.DecodeString(b64ResponseXML)
+func decodeResponse(response string, compressed bool) (*Response, error) {
+	decoded, err := base64.StdEncoding.DecodeString(response)
 	if err != nil {
 		return nil, err
 	}
-	bXML := util.Decompress(compressedXML)
-	err = xml.Unmarshal(bXML, &authnResponse)
+
+	if compressed {
+		decoded = util.Decompress(decoded)
+	}
+
+	authnResponse := Response{}
+	err = xml.Unmarshal(decoded, &authnResponse)
 	if err != nil {
 		return nil, err
 	}
 
 	// There is a bug with XML namespaces in Go that's causing XML attributes with colons to not be roundtrip
 	// marshal and unmarshaled so we'll keep the original string around for validation.
-	authnResponse.originalString = string(bXML)
+	authnResponse.originalString = string(decoded)
 	return &authnResponse, nil
 }
 
-func ParseEncodedResponse(b64ResponseXML string) (*Response, error) {
-	response := Response{}
-	bytesXML, err := base64.StdEncoding.DecodeString(b64ResponseXML)
-	if err != nil {
-		return nil, err
-	}
-	err = xml.Unmarshal(bytesXML, &response)
-	if err != nil {
-		return nil, err
-	}
+func ParseCompressedEncodedResponse(b64ResponseXML string) (*Response, error) {
+	return decodeResponse(b64ResponseXML, true)
+}
 
-	// There is a bug with XML namespaces in Go that's causing XML attributes with colons to not be roundtrip
-	// marshal and unmarshaled so we'll keep the original string around for validation.
-	response.originalString = string(bytesXML)
-	// fmt.Println(response.originalString)
-	return &response, nil
+func ParseEncodedResponse(b64ResponseXML string) (*Response, error) {
+	return decodeResponse(b64ResponseXML, false)
 }
 
 func (r *Response) Validate(s *ServiceProviderSettings) error {
@@ -75,24 +69,6 @@ func (r *Response) Validate(s *ServiceProviderSettings) error {
 		return errors.New("subject recipient mismatch, expected: " + s.AssertionConsumerServiceURL + " not " + r.Assertion.Subject.SubjectConfirmation.SubjectConfirmationData.Recipient)
 	}
 
-	// If the response is signed, verify signature
-
-	if len(r.Signature.SignatureValue.Value) > 0 {
-		err := VerifySignature(r.originalString, s.IDPPublicCertPath, xmlResponseID)
-		if err != nil {
-			return err
-		}
-	}
-
-	// TODO If the assertion is signed, verify signature (below)
-	if len(r.Assertion.Signature.SignatureValue.Value) > 0 {
-		err := error(nil) //VerifySignature(r.originalString, s.IDPPublicCertPath, xmlResponseAssertionID)
-		if err != nil {
-			return err
-		}
-	}
-
-	//CHECK TIMES
 	expires := r.Assertion.Subject.SubjectConfirmation.SubjectConfirmationData.NotOnOrAfter
 	notOnOrAfter, e := time.Parse(time.RFC3339, expires)
 	if e != nil {
@@ -100,6 +76,22 @@ func (r *Response) Validate(s *ServiceProviderSettings) error {
 	}
 	if notOnOrAfter.Before(time.Now()) {
 		return errors.New("assertion has expired on: " + expires)
+	}
+
+	attributeID := ""
+	if len(r.Signature.SignatureValue.Value) > 0 {
+		attributeID = xmlResponseID
+	} else if len(r.Assertion.Signature.SignatureValue.Value) > 0 {
+		attributeID = xmlResponseAssertionID
+	}
+
+	if attributeID == "" {
+		return errors.New("no signature found")
+	}
+
+	err := VerifySignature(r.originalString, s.IDPPublicCertPath, attributeID)
+	if err != nil {
+		return err
 	}
 
 	return nil
@@ -297,7 +289,7 @@ func (r *Response) SignedString(privateKeyPath string) (string, error) {
 		return "", err
 	}
 
-	return SignResponse(s, privateKeyPath)
+	return Sign(s, privateKeyPath, xmlRequestID)
 }
 
 func (r *Response) EncodedSignedString(privateKeyPath string) (string, error) {

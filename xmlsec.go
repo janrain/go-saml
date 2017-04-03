@@ -8,68 +8,55 @@ import (
 	"strings"
 )
 
-// SignRequest sign a SAML 2.0 AuthnRequest
-// `privateKeyPath` must be a path on the filesystem, xmlsec1 is run out of process
-// through `exec`
-func SignRequest(xml string, privateKeyPath string) (string, error) {
-	return sign(xml, privateKeyPath, xmlRequestID)
-}
-
-// SignResponse sign a SAML 2.0 Response
-// `privateKeyPath` must be a path on the filesystem, xmlsec1 is run out of process
-// through `exec`
-func SignResponse(xml string, privateKeyPath string) (string, error) {
-	return sign(xml, privateKeyPath, xmlResponseID)
-}
-
-func sign(xml string, privateKeyPath string, id string) (string, error) {
-
-	samlXmlsecInput, err := ioutil.TempFile(os.TempDir(), "tmpgs")
+// Sign signs an XML document
+// `privateKeyPath` must be a path on the filesystem because xmlsec1 is
+// run out of process through `exec`
+func Sign(xml string, privateKeyPath string, idAttribute string) (string, error) {
+	xmlsecInput, err := ioutil.TempFile(os.TempDir(), "tmpgs")
 	if err != nil {
 		return "", err
 	}
-	defer deleteTempFile(samlXmlsecInput.Name())
-	samlXmlsecInput.WriteString("<?xml version='1.0' encoding='UTF-8'?>\n")
-	samlXmlsecInput.WriteString(xml)
-	samlXmlsecInput.Close()
+	defer deleteTempFile(xmlsecInput.Name())
+	xmlsecInput.WriteString("<?xml version='1.0' encoding='UTF-8'?>\n")
+	xmlsecInput.WriteString(xml)
+	xmlsecInput.Close()
 
-	samlXmlsecOutput, err := ioutil.TempFile(os.TempDir(), "tmpgs")
+	xmlsecOutput, err := ioutil.TempFile(os.TempDir(), "tmpgs")
 	if err != nil {
 		return "", err
 	}
-	defer deleteTempFile(samlXmlsecOutput.Name())
-	samlXmlsecOutput.Close()
+	defer deleteTempFile(xmlsecOutput.Name())
+	xmlsecOutput.Close()
 
-	// fmt.Println("xmlsec1", "--sign", "--privkey-pem", privateKeyPath,
-	// 	"--id-attr:ID", id,
-	// 	"--output", samlXmlsecOutput.Name(), samlXmlsecInput.Name())
 	output, err := exec.Command("xmlsec1", "--sign", "--privkey-pem", privateKeyPath,
-		"--id-attr:ID", id,
-		"--output", samlXmlsecOutput.Name(), samlXmlsecInput.Name()).CombinedOutput()
+		"--id-attr:ID", idAttribute,
+		"--output", xmlsecOutput.Name(), xmlsecInput.Name()).CombinedOutput()
 	if err != nil {
 		return "", errors.New(err.Error() + " : " + string(output))
 	}
 
-	samlSignedRequest, err := ioutil.ReadFile(samlXmlsecOutput.Name())
+	signed, err := ioutil.ReadFile(xmlsecOutput.Name())
 	if err != nil {
 		return "", err
 	}
-	samlSignedRequestXML := strings.Trim(string(samlSignedRequest), "\n")
-	return samlSignedRequestXML, nil
+
+	return strings.Trim(string(signed), "\n"), nil
 }
 
-func VerifySignature(xml string, publicCertPath string, attributeID string) error {
-	//Write saml
-	samlXmlsecInput, err := ioutil.TempFile(os.TempDir(), "tmpgs")
+// VerifySignature verifies the signature of a signed XML document
+// `publicCertPath` must be a path on the filesystem because xmlsec1 is
+// run out of process through `exec`
+func VerifySignature(xml string, publicCertPath string, idAttribute string) error {
+	xmlsecInput, err := ioutil.TempFile(os.TempDir(), "tmpgs")
 	if err != nil {
 		return err
 	}
 
-	samlXmlsecInput.WriteString(xml)
-	samlXmlsecInput.Close()
-	defer deleteTempFile(samlXmlsecInput.Name())
+	xmlsecInput.WriteString(xml)
+	xmlsecInput.Close()
+	defer deleteTempFile(xmlsecInput.Name())
 
-	_, err = exec.Command("xmlsec1", "--verify", "--pubkey-cert-pem", publicCertPath, "--id-attr:ID", attributeID, samlXmlsecInput.Name()).CombinedOutput()
+	_, err = exec.Command("xmlsec1", "--verify", "--pubkey-cert-pem", publicCertPath, "--id-attr:ID", idAttribute, xmlsecInput.Name()).CombinedOutput()
 	if err != nil {
 		return errors.New("error verifying signature: " + err.Error())
 	}

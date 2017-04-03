@@ -24,7 +24,7 @@ import (
 	"github.com/janrain/go-saml/util"
 )
 
-const xmlRequestID  = "urn:oasis:names:tc:SAML:2.0:protocol:AuthnRequest"
+const xmlRequestID = "urn:oasis:names:tc:SAML:2.0:protocol:AuthnRequest"
 
 func ParseCompressedEncodedRequest(b64RequestXML string) (*AuthnRequest, error) {
 	var authnRequest AuthnRequest
@@ -63,6 +63,7 @@ func ParseEncodedRequest(b64RequestXML string) (*AuthnRequest, error) {
 	return &authnRequest, nil
 }
 
+// Validate validates an AuthnRequest, verifies the signature if present
 func (r *AuthnRequest) Validate(publicCertPath string) error {
 	if r.Version != "2.0" {
 		return errors.New("unsupported SAML Version")
@@ -72,9 +73,7 @@ func (r *AuthnRequest) Validate(publicCertPath string) error {
 		return errors.New("missing ID attribute on SAML Response")
 	}
 
-	// If the Request element is signed, let's verify it
-
-	if (len(r.Signature.SignatureValue.Value) > 0) {
+	if len(r.Signature.SignatureValue.Value) > 0 {
 		err := VerifySignature(r.originalString, publicCertPath, xmlRequestID)
 		if err != nil {
 			return err
@@ -84,7 +83,7 @@ func (r *AuthnRequest) Validate(publicCertPath string) error {
 	return nil
 }
 
-// GetSignedAuthnRequest returns a singed XML document that represents a AuthnRequest SAML document
+// GetAuthnRequest returns an AuthnRequest SAML document
 func (s *ServiceProviderSettings) GetAuthnRequest() *AuthnRequest {
 	r := NewAuthnRequest()
 	r.AssertionConsumerServiceURL = s.AssertionConsumerServiceURL
@@ -100,7 +99,7 @@ func (s *ServiceProviderSettings) GetAuthnRequest() *AuthnRequest {
 	return r
 }
 
-// GetAuthnRequestURL generate a URL for the AuthnRequest to the IdP with the SAMLRequst parameter encoded
+// GetAuthnRequestURL generates a URL for the AuthnRequest to the IdP with the SAMLRequest parameter encoded
 func GetAuthnRequestURL(baseURL string, b64XML string, state string) (string, error) {
 	u, err := url.Parse(baseURL)
 	if err != nil {
@@ -246,7 +245,7 @@ func (r *AuthnRequest) SignedString(privateKeyPath string) (string, error) {
 		return "", err
 	}
 
-	return SignRequest(s, privateKeyPath)
+	return Sign(s, privateKeyPath, xmlRequestID)
 }
 
 // GetAuthnRequestURL generate a URL for the AuthnRequest to the IdP with the SAMLRequst parameter encoded
