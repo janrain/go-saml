@@ -72,11 +72,12 @@ func (r *AuthnRequest) Validate(publicCertPath string) error {
 
 	// TODO more validation
 
-	err := VerifyRequestSignature(r.originalString, publicCertPath, "urn:oasis:names:tc:SAML:2.0:protocol:Response")
-	if err != nil {
-		return err
+	if(len(r.Signature.SignatureValue.Value) > 0) {
+		err := VerifySignature(r.originalString, publicCertPath)
+		if err != nil {
+			return err
+		}
 	}
-
 	return nil
 }
 

@@ -63,21 +63,7 @@ func sign(xml string, privateKeyPath string, id string) (string, error) {
 	return samlSignedRequestXML, nil
 }
 
-// VerifyResponseSignature verify signature of a SAML 2.0 Response document element with the id attributeID
-// `publicCertPath` must be a path on the filesystem, xmlsec1 is run out of process
-// through `exec`
-func VerifyResponseSignature(xml string, publicCertPath string, attributeID string) error {
-	return verify(xml, publicCertPath, attributeID)
-}
-
-// VerifyRequestSignature verify signature of a SAML 2.0 AuthnRequest document
-// `publicCertPath` must be a path on the filesystem, xmlsec1 is run out of process
-// through `exec`
-func VerifyRequestSignature(xml string, publicCertPath string, attributeID string) error {
-	return verify(xml, publicCertPath, attributeID)
-}
-
-func verify(xml string, publicCertPath string, id string) error {
+func VerifySignature(xml string, publicCertPath string) error {
 	//Write saml to
 	samlXmlsecInput, err := ioutil.TempFile(os.TempDir(), "tmpgs")
 	if err != nil {
@@ -88,8 +74,9 @@ func verify(xml string, publicCertPath string, id string) error {
 	samlXmlsecInput.Close()
 	defer deleteTempFile(samlXmlsecInput.Name())
 
-	//fmt.Println("xmlsec1", "--verify", "--pubkey-cert-pem", publicCertPath, "--id-attr:ID", id, samlXmlsecInput.Name())
-	_, err = exec.Command("xmlsec1", "--verify", "--pubkey-cert-pem", publicCertPath, "--id-attr:ID", id, samlXmlsecInput.Name()).CombinedOutput()
+	// testing without hack below, original line above
+	// _, err = exec.Command("xmlsec1", "--verify", "--pubkey-cert-pem", publicCertPath, "--id-attr:ID", id, samlXmlsecInput.Name()).CombinedOutput()
+	_, err = exec.Command("xmlsec1", "--verify", "--pubkey-cert-pem", publicCertPath, samlXmlsecInput.Name()).CombinedOutput()
 	if err != nil {
 		return errors.New("error verifing signature: " + err.Error())
 	}

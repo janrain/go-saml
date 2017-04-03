@@ -120,21 +120,21 @@ type Transform struct {
 }
 
 type EntityDescriptor struct {
-	XMLName  xml.Name
-	DS       string `xml:"xmlns:ds,attr"`
-	XMLNS    string `xml:"xmlns,attr"`
-	MD       string `xml:"xmlns:md,attr"`
-	EntityId string `xml:"entityID,attr"`
+	XMLName         xml.Name
+	DS              string `xml:"xmlns:ds,attr"`
+	XMLNS           string `xml:"xmlns,attr"`
+	MD              string `xml:"xmlns:md,attr"`
+	EntityId        string `xml:"entityID,attr"`
 
 	Extensions      Extensions      `xml:"Extensions"`
 	SPSSODescriptor SPSSODescriptor `xml:"SPSSODescriptor"`
 }
 
 type Extensions struct {
-	XMLName xml.Name
-	Alg     string `xml:"xmlns:alg,attr"`
-	MDAttr  string `xml:"xmlns:mdattr,attr"`
-	MDRPI   string `xml:"xmlns:mdrpi,attr"`
+	XMLName          xml.Name
+	Alg              string `xml:"xmlns:alg,attr"`
+	MDAttr           string `xml:"xmlns:mdattr,attr"`
+	MDRPI            string `xml:"xmlns:mdrpi,attr"`
 
 	EntityAttributes string `xml:"EntityAttributes"`
 }
@@ -145,12 +145,12 @@ type SPSSODescriptor struct {
 	SigningKeyDescriptor       KeyDescriptor
 	EncryptionKeyDescriptor    KeyDescriptor
 	// SingleLogoutService        SingleLogoutService `xml:"SingleLogoutService"`
-	AssertionConsumerServices []AssertionConsumerService
+	AssertionConsumerServices  []AssertionConsumerService
 }
 
 type EntityAttributes struct {
-	XMLName xml.Name
-	SAML    string `xml:"xmlns:saml,attr"`
+	XMLName          xml.Name
+	SAML             string `xml:"xmlns:saml,attr"`
 
 	EntityAttributes []Attribute `xml:"Attribute"` // should be array??
 }
@@ -177,20 +177,20 @@ type AssertionConsumerService struct {
 }
 
 type Response struct {
-	XMLName      xml.Name
-	SAMLP        string `xml:"xmlns:samlp,attr"`
-	SAML         string `xml:"xmlns:saml,attr"`
-	SAMLSIG      string `xml:"xmlns:samlsig,attr"`
-	Destination  string `xml:"Destination,attr"`
-	ID           string `xml:"ID,attr"`
-	Version      string `xml:"Version,attr"`
-	IssueInstant string `xml:"IssueInstant,attr"`
-	InResponseTo string `xml:"InResponseTo,attr"`
+	XMLName        xml.Name
+	SAMLP          string `xml:"xmlns:samlp,attr"`
+	SAML           string `xml:"xmlns:saml,attr"`
+	SAMLSIG        string `xml:"xmlns:samlsig,attr"`
+	Destination    string `xml:"Destination,attr"`
+	ID             string `xml:"ID,attr"`
+	Version        string `xml:"Version,attr"`
+	IssueInstant   string `xml:"IssueInstant,attr"`
+	InResponseTo   string `xml:"InResponseTo,attr"`
 
-	Assertion Assertion `xml:"Assertion"`
-	Signature Signature `xml:"Signature"`
-	Issuer    Issuer    `xml:"Issuer"`
-	Status    Status    `xml:"Status"`
+	Assertion      Assertion `xml:"Assertion"`
+	Signature      Signature `xml:"Signature"`
+	Issuer         Issuer    `xml:"Issuer"`
+	Status         Status    `xml:"Status"`
 
 	originalString string
 }
@@ -207,6 +207,7 @@ type Assertion struct {
 	Subject            Subject
 	Conditions         Conditions
 	AttributeStatement AttributeStatement
+	Signature          Signature `xml:"Signature"`
 }
 
 type Conditions struct {
