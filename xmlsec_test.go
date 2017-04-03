@@ -34,8 +34,8 @@ func TestResponse(t *testing.T) {
 	cert, err := util.LoadCertificate("./testdata/default.crt")
 	assert.NoError(err)
 
-	// Construct an AuthnRequest
-	response := NewSignedResponse()
+	// Construct a Response
+	response := NewResponse()
 	response.Signature.KeyInfo.X509Data.X509Certificate.Cert = cert
 
 	b, err := xml.MarshalIndent(response, "", "    ")

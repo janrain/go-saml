@@ -63,26 +63,6 @@ func ParseEncodedRequest(b64RequestXML string) (*AuthnRequest, error) {
 	return &authnRequest, nil
 }
 
-// Validate validates an AuthnRequest, verifies the signature if present
-func (r *AuthnRequest) Validate(publicCertPath string) error {
-	if r.Version != "2.0" {
-		return errors.New("unsupported SAML Version")
-	}
-
-	if len(r.ID) == 0 {
-		return errors.New("missing ID attribute on SAML Response")
-	}
-
-	if len(r.Signature.SignatureValue.Value) > 0 {
-		err := VerifySignature(r.originalString, publicCertPath, xmlRequestID)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 // GetAuthnRequest returns an AuthnRequest SAML document
 func (s *ServiceProviderSettings) GetAuthnRequest() *AuthnRequest {
 	r := NewAuthnRequest()
@@ -113,6 +93,7 @@ func GetAuthnRequestURL(baseURL string, b64XML string, state string) (string, er
 	return u.String(), nil
 }
 
+// NewAuthnRequest constructs an AuthnRequest
 func NewAuthnRequest() *AuthnRequest {
 	id := util.ID()
 	return &AuthnRequest{
@@ -228,6 +209,26 @@ func NewAuthnRequest() *AuthnRequest {
 			},
 		},
 	}
+}
+
+// Validate validates an AuthnRequest, verifies the signature if present
+func (r *AuthnRequest) Validate(publicCertPath string) error {
+	if r.Version != "2.0" {
+		return errors.New("unsupported SAML Version")
+	}
+
+	if len(r.ID) == 0 {
+		return errors.New("missing ID attribute on SAML Response")
+	}
+
+	if len(r.Signature.SignatureValue.Value) > 0 {
+		err := VerifySignature(r.originalString, publicCertPath, xmlRequestID)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (r *AuthnRequest) String() (string, error) {
