@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/janrain/go-saml/util"
-	"fmt"
 )
 
 const (
