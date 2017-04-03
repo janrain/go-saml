@@ -207,7 +207,7 @@ type Assertion struct {
 	Subject            Subject
 	Conditions         Conditions
 	AttributeStatement AttributeStatement
-	Signature          Signature `xml:"Signature"`
+	Signature          Signature `xml:"Signature,omitempty"`
 }
 
 type Conditions struct {

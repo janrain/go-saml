@@ -7,6 +7,12 @@ import (
 	"time"
 
 	"github.com/janrain/go-saml/util"
+	"fmt"
+)
+
+const (
+	xmlResponseID = "urn:oasis:names:tc:SAML:2.0:protocol:Response"
+	xmlResponseAssertionID = "urn:oasis:names:tc:SAML:2.0:assertion"
 )
 
 func ParseCompressedEncodedResponse(b64ResponseXML string) (*Response, error) {
@@ -25,7 +31,6 @@ func ParseCompressedEncodedResponse(b64ResponseXML string) (*Response, error) {
 	// marshal and unmarshaled so we'll keep the original string around for validation.
 	authnResponse.originalString = string(bXML)
 	return &authnResponse, nil
-
 }
 
 func ParseEncodedResponse(b64ResponseXML string) (*Response, error) {
@@ -71,9 +76,21 @@ func (r *Response) Validate(s *ServiceProviderSettings) error {
 		return errors.New("subject recipient mismatch, expected: " + s.AssertionConsumerServiceURL + " not " + r.Assertion.Subject.SubjectConfirmation.SubjectConfirmationData.Recipient)
 	}
 
-	err := VerifySignature(r.originalString, s.IDPPublicCertPath)
-	if err != nil {
-		return err
+	// If the response is signed, verify signature
+
+	if len(r.Signature.SignatureValue.Value) > 0 {
+		err := VerifySignature(r.originalString, s.IDPPublicCertPath, xmlResponseID)
+		if err != nil {
+			return err
+		}
+	}
+
+	// TODO If the assertion is signed, verify signature (below)
+	if len(r.Assertion.Signature.SignatureValue.Value) > 0 {
+		err := error(nil) //VerifySignature(r.originalString, s.IDPPublicCertPath, xmlResponseAssertionID)
+		if err != nil {
+			return err
+		}
 	}
 
 	//CHECK TIMES

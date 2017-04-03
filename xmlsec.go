@@ -8,11 +8,6 @@ import (
 	"strings"
 )
 
-const (
-	xmlResponseID = "urn:oasis:names:tc:SAML:2.0:protocol:Response"
-	xmlRequestID  = "urn:oasis:names:tc:SAML:2.0:protocol:AuthnRequest"
-)
-
 // SignRequest sign a SAML 2.0 AuthnRequest
 // `privateKeyPath` must be a path on the filesystem, xmlsec1 is run out of process
 // through `exec`
@@ -63,8 +58,8 @@ func sign(xml string, privateKeyPath string, id string) (string, error) {
 	return samlSignedRequestXML, nil
 }
 
-func VerifySignature(xml string, publicCertPath string) error {
-	//Write saml to
+func VerifySignature(xml string, publicCertPath string, attributeID string) error {
+	//Write saml
 	samlXmlsecInput, err := ioutil.TempFile(os.TempDir(), "tmpgs")
 	if err != nil {
 		return err
@@ -74,10 +69,9 @@ func VerifySignature(xml string, publicCertPath string) error {
 	samlXmlsecInput.Close()
 	defer deleteTempFile(samlXmlsecInput.Name())
 
-	// testing without hack below, original line above
-	_, err = exec.Command("xmlsec1", "--verify", "--pubkey-cert-pem", publicCertPath, "--id-attr:ID", xmlResponseID, samlXmlsecInput.Name()).CombinedOutput()
+	_, err = exec.Command("xmlsec1", "--verify", "--pubkey-cert-pem", publicCertPath, "--id-attr:ID", attributeID, samlXmlsecInput.Name()).CombinedOutput()
 	if err != nil {
-		return errors.New("error verifing signature: " + err.Error())
+		return errors.New("error verifying signature: " + err.Error())
 	}
 	return nil
 }

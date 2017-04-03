@@ -24,6 +24,8 @@ import (
 	"github.com/janrain/go-saml/util"
 )
 
+const xmlRequestID  = "urn:oasis:names:tc:SAML:2.0:protocol:AuthnRequest"
+
 func ParseCompressedEncodedRequest(b64RequestXML string) (*AuthnRequest, error) {
 	var authnRequest AuthnRequest
 	compressedXML, err := base64.StdEncoding.DecodeString(b64RequestXML)
@@ -70,14 +72,15 @@ func (r *AuthnRequest) Validate(publicCertPath string) error {
 		return errors.New("missing ID attribute on SAML Response")
 	}
 
-	// TODO more validation
+	// If the Request element is signed, let's verify it
 
-	if(len(r.Signature.SignatureValue.Value) > 0) {
-		err := VerifySignature(r.originalString, publicCertPath)
+	if (len(r.Signature.SignatureValue.Value) > 0) {
+		err := VerifySignature(r.originalString, publicCertPath, xmlRequestID)
 		if err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -124,7 +127,6 @@ func NewAuthnRequest() *AuthnRequest {
 		ProtocolBinding:             "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
 		Version:                     "2.0",
 		AssertionConsumerServiceURL: "", // caller must populate ar.AppSettings.AssertionConsumerServiceURL,
-		AssertionConsumerServiceIndex: 0,
 		Issuer: Issuer{
 			XMLName: xml.Name{
 				Local: "saml:Issuer",
@@ -138,7 +140,7 @@ func NewAuthnRequest() *AuthnRequest {
 				Local: "samlp:NameIDPolicy",
 			},
 			AllowCreate: true,
-			Format:      "urn:oasis:names:tc:SAML:.1:nameid-format:unspecified",
+			Format:      "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified",
 		},
 		RequestedAuthnContext: RequestedAuthnContext{
 			XMLName: xml.Name{
