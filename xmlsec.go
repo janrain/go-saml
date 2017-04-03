@@ -75,8 +75,7 @@ func VerifySignature(xml string, publicCertPath string) error {
 	defer deleteTempFile(samlXmlsecInput.Name())
 
 	// testing without hack below, original line above
-	// _, err = exec.Command("xmlsec1", "--verify", "--pubkey-cert-pem", publicCertPath, "--id-attr:ID", id, samlXmlsecInput.Name()).CombinedOutput()
-	_, err = exec.Command("xmlsec1", "--verify", "--pubkey-cert-pem", publicCertPath, samlXmlsecInput.Name()).CombinedOutput()
+	_, err = exec.Command("xmlsec1", "--verify", "--pubkey-cert-pem", publicCertPath, "--id-attr:ID", xmlResponseID, samlXmlsecInput.Name()).CombinedOutput()
 	if err != nil {
 		return errors.New("error verifing signature: " + err.Error())
 	}
