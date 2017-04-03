@@ -1,13 +1,8 @@
 go-saml
 ======
 
-[![Build Status](https://travis-ci.org/RobotsAndPencils/go-saml.svg?branch=master)](https://travis-ci.org/RobotsAndPencils/go-saml)
-
-A just good enough SAML client library written in Go. This library is by no means complete and has been developed
-to solve several specific integration efforts. However, it's a start, and it would be great to see
-it evolve into a more fleshed out implemention.
-
-Inspired by the early work of [Matt Baird](https://github.com/mattbaird/gosaml).
+A just good enough SAML client library written in Go.
+Forked from [https://github.com/RobotsAndPencils/go-saml](https://github.com/RobotsAndPencils/go-saml)
 
 The library supports:
 
@@ -16,16 +11,6 @@ The library supports:
 * generating service provider metadata
 * generating signed Responses
 * validating signed Responses
-
-
-Installation
-------------
-
-    $ go get github.com/RobotsAndPencils/go-saml
-
-Here's a convenient way to generate a certificate:
-
-    curl -sSL https://raw.githubusercontent.com/frntn/x509-san/master/gencert.sh | CRT_CN="mycert"  bash
 
 
 Usage
@@ -188,22 +173,3 @@ signed, err := authnResponse.SignedString("/path/to/private.key")
 b64XML, err := authnResponse.EncodedSignedString("/path/to/private.key")
 
 ```
-
-
-### Contributing
-
-Would love any contributions you having including better documentation, tests, or more robust functionality.
-
-    git clone git@github.com:RobotsAndPencils/go-saml.git
-    make init
-    make test
-
-### Contact
-
-[![Robots & Pencils Logo](http://f.cl.ly/items/2W3n1r2R0j2p2b3n3j3c/rnplogo.png)](http://www.robotsandpencils.com)
-
-Made with :heart: by Robots & Pencils ([@robotsNpencils](https://twitter.com/robotsNpencils))
-
-#### Maintainers
-
-- [Mike Brevoort](http://github.com/mbrevoort) ([@mbrevoort](https://twitter.com/mbrevoort))
