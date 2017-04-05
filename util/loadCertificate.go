@@ -1,23 +1,17 @@
 package util
 
 import (
+	"encoding/base64"
+	"encoding/pem"
 	"io/ioutil"
-	"regexp"
-	"strings"
 )
 
 // LoadCertificate from file system
 func LoadCertificate(certPath string) (string, error) {
-	b, err := ioutil.ReadFile(certPath)
+	data, err := ioutil.ReadFile(certPath)
 	if err != nil {
 		return "", err
 	}
-	cert := string(b)
-
-	re := regexp.MustCompile("---(.*)CERTIFICATE(.*)---")
-	cert = re.ReplaceAllString(cert, "")
-	cert = strings.Trim(cert, " \n")
-	cert = strings.Replace(cert, "\n", "", -1)
-
-	return cert, nil
+	block, _ := pem.Decode(data)
+	return base64.StdEncoding.EncodeToString(block.Bytes), nil
 }
