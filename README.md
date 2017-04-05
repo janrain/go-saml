@@ -1,17 +1,20 @@
 go-saml
 ======
 
-A just good enough SAML client library written in Go.
 Forked from [https://github.com/RobotsAndPencils/go-saml](https://github.com/RobotsAndPencils/go-saml)
+
+A just good enough SAML client library written in Go.
 
 The library supports:
 
 * generating signed/unsigned AuthnRequests
-* validating signed AuthnRequests
-* generating service provider metadata
-* generating signed Responses
 * validating signed Responses
+* generating service provider metadata
 
+### Prerequisites
+
+The `xmlsec1` command must be installed - this library uses it to
+sign and verify XML signatures.
 
 Usage
 -----
@@ -21,76 +24,52 @@ Below are samples to show how you might use the library.
 ### Generating Signed AuthnRequests
 
 ```go
-sp := saml.ServiceProviderSettings{
-  PublicCertPath:              "../default.crt",
-  PrivateKeyPath:              "../default.key",
-  IDPSSOURL:                   "http://idp/saml2",
-  IDPSSODescriptorURL:         "http://idp/issuer",
-  IDPPublicCertPath:           "idpcert.crt",
-  SPSignRequest:               "true",
-  AssertionConsumerServiceURL: "http://localhost:8000/saml_consume",
+sp := &saml.ServiceProvider{
+  PublicCertPath:              "/certs/default.crt", // filesystem path to your cert
+  PrivateKeyPath:              "/certs/default.key", // filesystem path to your private key
+  IDPSSOURL:                   "http://idp/saml2", // idp's authentication url
+  IDPSSODescriptorURL:         "http://idp/issuer", // idp's issuer url
+  IDPPublicCertPath:           "/certs/idpcert.crt", // filesystem path to idp's cert
+  SignRequest:                 true, // whether to sign authentication requests
+  UseCompression:              true, // whether to compress requests and decompress responses
+  AssertionConsumerServiceURL: "http://localhost:8000/saml_consume", // your callback url after authentication at IDP
 }
 sp.Init()
 
-// generate the AuthnRequest and then get a base64 encoded string of the XML
-authnRequest := sp.GetAuthnRequest()
-b64XML, err := authnRequest.EncodedSignedString(sp.PrivateKeyPath)
+// generate the AuthnRequest
+authnRequest := sp.AuthnRequest()
+
+// get a base64 encoded string of the XML
+b64XML, err := sp.EncodeAuthnRequest(authnRequest)
 if err != nil {
   panic(err)
 }
 
-// for convenience, get a URL formed with the SAMLRequest parameter
-url, err := saml.GetAuthnRequestURL(sp.IDPSSOURL, b64XML)
+// get a URL with the SAMLRequest parameter containing the encoded XML
+url, err := sp.AuthnRequestURL(b64XML, "some state value")
 if err != nil {
   panic(err)
 }
-
-// below is bonus for how you might respond to a request with a form that POSTs to the IdP
-data := struct {
-  Base64AuthRequest string
-  URL               string
-}{
-  Base64AuthRequest: b64XML,
-  URL:               url,
-}
-
-t := template.New("saml")
-t, err = t.Parse("<html><body style=\"display: none\" onload=\"document.frm.submit()\"><form method=\"post\" name=\"frm\" action=\"{{.URL}}\"><input type=\"hidden\" name=\"SAMLRequest\" value=\"{{.Base64AuthRequest}}\" /><input type=\"submit\" value=\"Submit\" /></form></body></html>")
-
-// how you might respond to a request with the templated form that will auto post
-t.Execute(w, data)
 ```
 
 ### Validating a received SAML Response
 
 
 ```go
-response = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-  encodedXML := r.FormValue("SAMLResponse")
-
-  if encodedXML == "" {
-    httpcommon.SendBadRequest(w, "SAMLResponse form value missing")
-    return
-  }
-
-  response, err := saml.ParseEncodedResponse(encodedXML)
+  resp, err := sp.ParseResponse(encodedXML)
   if err != nil {
-    httpcommon.SendBadRequest(w, "SAMLResponse parse: "+err.Error())
-    return
+    panic(err)
   }
 
-  err = response.Validate(&sp)
+  err = sp.ValidateResponse(resp)
   if err != nil {
-    httpcommon.SendBadRequest(w, "SAMLResponse validation: "+err.Error())
-    return
+    panic(err)
   }
 
-  samlID := response.GetAttribute("uid")
-  if samlID == "" {
-    httpcommon.SendBadRequest(w, "SAML attribute identifier uid missing")
-    return
+  subject := resp.Assertion.Subject.NameID.Value
+  for _, attr := range resp.Assertion.AttributeStatement.Attributes {
+    // process attributes...
   }
-
   //...
 }
 ```
@@ -98,78 +77,15 @@ response = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 ### Service provider metadata
 
 ```go
-func samlMetadataHandler(sp *saml.ServiceProviderSettings) http.Handler {
+func samlMetadataHandler(sp *saml.ServiceProvider) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		md, err := sp.GetEntityDescriptor()
+		md, err := sp.EntityDescriptorXML()
 		if err != nil {
-      w.WriteHeader(500)
-      w.Write([]byte("Error: " + err.Error()))
-			return
+      panic(err)
 		}
 
 		w.Header().Set("Content-Type", "application/xml")
 		w.Write([]byte(md))
 	})
 }
-```
-
-### Receiving a authnRequest
-
-```go
-b64Request := r.URL.Query().Get("SAMLRequest")
-if b64Request == "" {
-  w.WriteHeader(400)
-  w.Write([]byte("SAMLRequest parameter missing"))
-  return
-}
-
-defated, err := base64.StdEncoding.DecodeString(b64Request)
-if err != nil {
-  w.WriteHeader(500)
-  w.Write([]byte("Error: " + err.Error()))
-  return
-}
-
-// enflate and unmarshal
-var buffer bytes.Buffer
-rdr := flate.NewReader(bytes.NewReader(defated))
-io.Copy(&buffer, rdr)
-var authnRequest saml.AuthnRequest
-
-err = xml.Unmarshal(buffer.Bytes(), &authnRequest)
-if err != nil {
-  w.WriteHeader(500)
-  w.Write([]byte("Error: " + err.Error()))
-  return
-}
-
-if authnRequest.Issuer.Url != issuerURL {
-  w.WriteHeader(500)
-  w.Write([]byte("unauthorized issuer "+authnRequest.Issuer.Url))
-  return
-}
-
-```
-
-### Creating a SAML Response (if acting as an IdP)
-
-```go
-issuer := "http://localhost:8000/saml"
-authnResponse := saml.NewSignedResponse()
-authnResponse.Issuer.Url = issuer
-authnResponse.Assertion.Issuer.Url = issuer
-authnResponse.Signature.KeyInfo.X509Data.X509Certificate.Cert = stringValueOfCert
-authnResponse.Assertion.Subject.NameID.Value = userIdThatYouAuthenticated
-authnResponse.AddAttribute("uid", userIdThatYouAuthenticated)
-authnResponse.AddAttribute("email", "someone@domain")
-authnResponse.Assertion.Subject.SubjectConfirmation.SubjectConfirmationData.InResponseTo = authnRequestIdRespondingTo
-authnResponse.InResponseTo = authnRequestIdRespondingTo
-authnResponse.Assertion.Subject.SubjectConfirmation.SubjectConfirmationData.Recipient = issuer
-
-// signed XML string
-signed, err := authnResponse.SignedString("/path/to/private.key")
-
-// or signed base64 encoded XML string
-b64XML, err := authnResponse.EncodedSignedString("/path/to/private.key")
-
 ```

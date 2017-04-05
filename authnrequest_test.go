@@ -1,49 +1,51 @@
-package saml
+package saml_test
 
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/janrain/go-saml"
+
+	"github.com/stretchr/testify/suite"
 )
 
-func TestGetSignedRequest(t *testing.T) {
-	assert := assert.New(t)
-	sp := ServiceProviderSettings{
-		PublicCertPath:              "./testdata/default.crt",
-		PrivateKeyPath:              "./testdata/default.key",
-		IDPSSOURL:                   "http://www.onelogin.net",
-		IDPSSODescriptorURL:         "http://www.onelogin.net",
-		IDPPublicCertPath:           "./testdata/default.crt",
-		AssertionConsumerServiceURL: "http://localhost:8000/auth/saml/name",
-		SPSignRequest:               true,
-	}
-	err := sp.Init()
-	assert.NoError(err)
-
-	// Construct an AuthnRequest
-	authnRequest := sp.GetAuthnRequest()
-	signedXML, err := authnRequest.SignedString(sp.PrivateKeyPath)
-	assert.NoError(err)
-	assert.NotEmpty(signedXML)
-
-	err = authnRequest.Validate(sp.PublicCertPath)
-	assert.NoError(err)
+type AuthnRequestTestSuite struct {
+	suite.Suite
+	sp *saml.ServiceProvider
+	ar *saml.AuthnRequest
 }
 
-func TestGetUnsignedRequest(t *testing.T) {
-	assert := assert.New(t)
-	sp := ServiceProviderSettings{
+func (s *AuthnRequestTestSuite) SetupTest() {
+	s.sp = &saml.ServiceProvider{
+		PublicCertPath:              "./xmlsec/testdata/default.crt",
+		PrivateKeyPath:              "./xmlsec/testdata/default.key",
 		IDPSSOURL:                   "http://www.onelogin.net",
 		IDPSSODescriptorURL:         "http://www.onelogin.net",
-		IDPPublicCertPath:           "./testdata/default.crt",
+		IDPPublicCertPath:           "./xmlsec/testdata/default.crt",
 		AssertionConsumerServiceURL: "http://localhost:8000/auth/saml/name",
-		SPSignRequest:               false,
+		SignRequest:                 true,
+		UseCompression:              true,
 	}
-	err := sp.Init()
-	assert.NoError(err)
+	err := s.sp.Init()
+	if err != nil {
+		panic(err)
+	}
+	s.ar = s.sp.AuthnRequest()
+}
 
-	// Construct an AuthnRequest
-	authnRequest := sp.GetAuthnRequest()
-	assert.NoError(err)
-	assert.NotEmpty(authnRequest)
+func (s *AuthnRequestTestSuite) TestSignedAuthnRequest() {
+	encoded, err := s.sp.EncodeAuthnRequest(s.ar)
+	s.NoError(err)
+	s.NotEmpty(encoded)
+
+	u, err := s.sp.AuthnRequestURL(encoded, "asdf")
+	s.NoError(err)
+	s.Equal("http", u.Scheme)
+	s.Equal("www.onelogin.net", u.Host)
+	q := u.Query()
+	s.Equal(encoded, q.Get("SAMLRequest"))
+	s.Equal("asdf", q.Get("RelayState"))
+}
+
+func TestAuthnRequest(t *testing.T) {
+	suite.Run(t, &AuthnRequestTestSuite{})
 }

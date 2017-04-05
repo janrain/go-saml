@@ -1,4 +1,4 @@
-package saml
+package xmlsec
 
 import (
 	"errors"
@@ -11,7 +11,7 @@ import (
 // Sign signs an XML document
 // `privateKeyPath` must be a path on the filesystem because xmlsec1 is
 // run out of process through `exec`
-func Sign(xml string, privateKeyPath string, idAttribute string) (string, error) {
+func Sign(xml, privateKeyPath, idAttribute string) (string, error) {
 	xmlsecInput, err := ioutil.TempFile(os.TempDir(), "tmpgs")
 	if err != nil {
 		return "", err
@@ -46,7 +46,7 @@ func Sign(xml string, privateKeyPath string, idAttribute string) (string, error)
 // VerifySignature verifies the signature of a signed XML document
 // `publicCertPath` must be a path on the filesystem because xmlsec1 is
 // run out of process through `exec`
-func VerifySignature(xml string, publicCertPath string, idAttribute string) error {
+func VerifySignature(xml, publicCertPath, idAttribute string) error {
 	xmlsecInput, err := ioutil.TempFile(os.TempDir(), "tmpgs")
 	if err != nil {
 		return err
@@ -56,9 +56,9 @@ func VerifySignature(xml string, publicCertPath string, idAttribute string) erro
 	xmlsecInput.Close()
 	defer deleteTempFile(xmlsecInput.Name())
 
-	_, err = exec.Command("xmlsec1", "--verify", "--pubkey-cert-pem", publicCertPath, "--id-attr:ID", idAttribute, xmlsecInput.Name()).CombinedOutput()
+	output, err := exec.Command("xmlsec1", "--verify", "--pubkey-cert-pem", publicCertPath, "--id-attr:ID", idAttribute, xmlsecInput.Name()).CombinedOutput()
 	if err != nil {
-		return errors.New("error verifying signature: " + err.Error())
+		return errors.New("error verifying signature: " + err.Error() + ", " + string(output))
 	}
 	return nil
 }

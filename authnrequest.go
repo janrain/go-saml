@@ -1,96 +1,63 @@
-// Copyright 2014 Matthew Baird, Andrew Mussey
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package saml
 
 import (
 	"encoding/base64"
 	"encoding/xml"
-	"errors"
 	"net/url"
 	"time"
 
 	"github.com/janrain/go-saml/util"
+	"github.com/janrain/go-saml/xmlsec"
 )
 
-const xmlRequestID = "urn:oasis:names:tc:SAML:2.0:protocol:AuthnRequest"
+const RequestXMLID = "urn:oasis:names:tc:SAML:2.0:protocol:AuthnRequest"
 
-func ParseCompressedEncodedRequest(b64RequestXML string) (*AuthnRequest, error) {
-	var authnRequest AuthnRequest
-	compressedXML, err := base64.StdEncoding.DecodeString(b64RequestXML)
-	if err != nil {
-		return nil, err
+// AuthnRequest creates an AuthnRequest object
+func (sp *ServiceProvider) AuthnRequest() *AuthnRequest {
+	ar := NewAuthnRequest()
+	ar.AssertionConsumerServiceURL = sp.AssertionConsumerServiceURL
+	ar.Destination = sp.IDPSSOURL
+	ar.Issuer.Url = sp.IDPSSODescriptorURL
+	ar.Signature.KeyInfo.X509Data.X509Certificate.Cert = sp.PublicCert()
+
+	if !sp.SignRequest {
+		ar.SAMLSIG = ""
+		ar.Signature = nil
 	}
-	bXML := util.Decompress(compressedXML)
 
-	err = xml.Unmarshal(bXML, &authnRequest)
-	if err != nil {
-		return nil, err
-	}
-
-	// There is a bug with XML namespaces in Go that's causing XML attributes with colons to not be roundtrip
-	// marshal and unmarshaled so we'll keep the original string around for validation.
-	authnRequest.originalString = string(bXML)
-	return &authnRequest, nil
-
+	return ar
 }
 
-func ParseEncodedRequest(b64RequestXML string) (*AuthnRequest, error) {
-	authnRequest := AuthnRequest{}
-	bytesXML, err := base64.StdEncoding.DecodeString(b64RequestXML)
-	if err != nil {
-		return nil, err
+// EncodedAuthnRequest returns an encoded AuthnRequest
+func (sp *ServiceProvider) EncodeAuthnRequest(ar *AuthnRequest) (string, error) {
+	if sp.SignRequest {
+		if sp.UseCompression {
+			return ar.CompressedEncodedSignedString(sp.PrivateKeyPath)
+		} else {
+			return ar.EncodedSignedString(sp.PrivateKeyPath)
+		}
+	} else {
+		if sp.UseCompression {
+			return ar.CompressedEncodedString()
+		} else {
+			return ar.EncodedString()
+		}
 	}
-	err = xml.Unmarshal(bytesXML, &authnRequest)
-	if err != nil {
-		return nil, err
-	}
-
-	// There is a bug with XML namespaces in Go that's causing XML attributes with colons to not be roundtrip
-	// marshal and unmarshaled so we'll keep the original string around for validation.
-	authnRequest.originalString = string(bytesXML)
-	return &authnRequest, nil
 }
 
-// GetAuthnRequest returns an AuthnRequest SAML document
-func (s *ServiceProviderSettings) GetAuthnRequest() *AuthnRequest {
-	r := NewAuthnRequest()
-	r.AssertionConsumerServiceURL = s.AssertionConsumerServiceURL
-	r.Destination = s.IDPSSOURL
-	r.Issuer.Url = s.IDPSSODescriptorURL
-	r.Signature.KeyInfo.X509Data.X509Certificate.Cert = s.PublicCert()
-
-	if !s.SPSignRequest {
-		r.SAMLSIG = ""
-		r.Signature = nil
-	}
-
-	return r
-}
-
-// GetAuthnRequestURL generates a URL for the AuthnRequest to the IdP with the SAMLRequest parameter encoded
-func GetAuthnRequestURL(baseURL string, b64XML string, state string) (string, error) {
-	u, err := url.Parse(baseURL)
+// AuthnRequestURL generates a URL for the encoded AuthnRequest
+// with the SAMLRequest and RelayState query params set
+func (sp *ServiceProvider) AuthnRequestURL(encodedXML, state string) (*url.URL, error) {
+	u, err := url.Parse(sp.IDPSSOURL)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	q := u.Query()
-	q.Add("SAMLRequest", b64XML)
+	q.Add("SAMLRequest", encodedXML)
 	q.Add("RelayState", state)
 	u.RawQuery = q.Encode()
-	return u.String(), nil
+	return u, nil
 }
 
 // NewAuthnRequest constructs an AuthnRequest
@@ -211,28 +178,8 @@ func NewAuthnRequest() *AuthnRequest {
 	}
 }
 
-// Validate validates an AuthnRequest, verifies the signature if present
-func (r *AuthnRequest) Validate(publicCertPath string) error {
-	if r.Version != "2.0" {
-		return errors.New("unsupported SAML Version")
-	}
-
-	if len(r.ID) == 0 {
-		return errors.New("missing ID attribute on SAML Response")
-	}
-
-	if len(r.Signature.SignatureValue.Value) > 0 {
-		err := VerifySignature(r.originalString, publicCertPath, xmlRequestID)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (r *AuthnRequest) String() (string, error) {
-	b, err := xml.MarshalIndent(r, "", "    ")
+func (ar *AuthnRequest) String() (string, error) {
+	b, err := xml.MarshalIndent(ar, "", "\t")
 	if err != nil {
 		return "", err
 	}
@@ -240,18 +187,17 @@ func (r *AuthnRequest) String() (string, error) {
 	return string(b), nil
 }
 
-func (r *AuthnRequest) SignedString(privateKeyPath string) (string, error) {
-	s, err := r.String()
+func (ar *AuthnRequest) SignedString(privateKeyPath string) (string, error) {
+	s, err := ar.String()
 	if err != nil {
 		return "", err
 	}
 
-	return Sign(s, privateKeyPath, xmlRequestID)
+	return xmlsec.Sign(s, privateKeyPath, RequestXMLID)
 }
 
-// GetAuthnRequestURL generate a URL for the AuthnRequest to the IdP with the SAMLRequst parameter encoded
-func (r *AuthnRequest) EncodedSignedString(privateKeyPath string) (string, error) {
-	signed, err := r.SignedString(privateKeyPath)
+func (ar *AuthnRequest) EncodedSignedString(privateKeyPath string) (string, error) {
+	signed, err := ar.SignedString(privateKeyPath)
 	if err != nil {
 		return "", err
 	}
@@ -259,8 +205,8 @@ func (r *AuthnRequest) EncodedSignedString(privateKeyPath string) (string, error
 	return b64XML, nil
 }
 
-func (r *AuthnRequest) CompressedEncodedSignedString(privateKeyPath string) (string, error) {
-	signed, err := r.SignedString(privateKeyPath)
+func (ar *AuthnRequest) CompressedEncodedSignedString(privateKeyPath string) (string, error) {
+	signed, err := ar.SignedString(privateKeyPath)
 	if err != nil {
 		return "", err
 	}
@@ -269,8 +215,8 @@ func (r *AuthnRequest) CompressedEncodedSignedString(privateKeyPath string) (str
 	return b64XML, nil
 }
 
-func (r *AuthnRequest) EncodedString() (string, error) {
-	saml, err := r.String()
+func (ar *AuthnRequest) EncodedString() (string, error) {
+	saml, err := ar.String()
 	if err != nil {
 		return "", err
 	}
@@ -278,8 +224,8 @@ func (r *AuthnRequest) EncodedString() (string, error) {
 	return b64XML, nil
 }
 
-func (r *AuthnRequest) CompressedEncodedString() (string, error) {
-	saml, err := r.String()
+func (ar *AuthnRequest) CompressedEncodedString() (string, error) {
+	saml, err := ar.String()
 	if err != nil {
 		return "", err
 	}
