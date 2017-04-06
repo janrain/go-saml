@@ -55,7 +55,6 @@ func (s *ResponseTestSuite) SetupTest() {
 		IDPPublicCertPath:           "./xmlsec/testdata/default.crt",
 		AssertionConsumerServiceURL: "http://localhost:8080/callback",
 		SignRequest:                 true,
-		UseCompression:              false,
 	}
 	err := s.sp.Init()
 	if err != nil {
@@ -68,7 +67,7 @@ func (s *ResponseTestSuite) TestParseAndValidateResponse() {
 	s.NoError(err)
 
 	encodedXML := base64.StdEncoding.EncodeToString([]byte(signedXML))
-	resp, err := s.sp.ParseResponse(encodedXML)
+	resp, err := saml.ParseResponse(encodedXML)
 	s.NoError(err)
 	s.Equal(s.sp.AssertionConsumerServiceURL, resp.Destination)
 	s.Equal("myuserid", resp.Assertion.Subject.NameID.Value)

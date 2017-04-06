@@ -31,13 +31,13 @@ func (sp *ServiceProvider) AuthnRequest() *AuthnRequest {
 // EncodedAuthnRequest returns an encoded AuthnRequest
 func (sp *ServiceProvider) EncodeAuthnRequest(ar *AuthnRequest) (string, error) {
 	if sp.SignRequest {
-		if sp.UseCompression {
+		if sp.CompressRequest {
 			return ar.CompressedEncodedSignedString(sp.PrivateKeyPath)
 		} else {
 			return ar.EncodedSignedString(sp.PrivateKeyPath)
 		}
 	} else {
-		if sp.UseCompression {
+		if sp.CompressRequest {
 			return ar.CompressedEncodedString()
 		} else {
 			return ar.EncodedString()

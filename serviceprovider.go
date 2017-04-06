@@ -19,7 +19,7 @@ type ServiceProvider struct {
 	IDPPublicCertPath           string
 	AssertionConsumerServiceURL string
 	SignRequest                 bool
-	UseCompression              bool
+	CompressRequest             bool
 
 	hasInit       bool
 	publicCert    string

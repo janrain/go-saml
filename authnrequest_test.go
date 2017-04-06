@@ -23,7 +23,7 @@ func (s *AuthnRequestTestSuite) SetupTest() {
 		IDPPublicCertPath:           "./xmlsec/testdata/default.crt",
 		AssertionConsumerServiceURL: "http://localhost:8000/auth/saml/name",
 		SignRequest:                 true,
-		UseCompression:              true,
+		CompressRequest:             true,
 	}
 	err := s.sp.Init()
 	if err != nil {

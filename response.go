@@ -16,15 +16,17 @@ const (
 )
 
 // ParseResponse decodes a SAML Response
-func (sp *ServiceProvider) ParseResponse(encodedXML string) (*Response, error) {
+func ParseResponse(encodedXML string) (*Response, error) {
 	decodedXML, err := base64.StdEncoding.DecodeString(encodedXML)
 	if err != nil {
 		return nil, err
 	}
 
-	if sp.UseCompression {
-		decodedXML = util.Decompress(decodedXML)
+	decompressedXML, err := util.Decompress(decodedXML)
+	if err == nil {
+		decodedXML = decompressedXML
 	}
+	// if there was an error during decompression, assume it wasn't compressed
 
 	resp := &Response{}
 	err = xml.Unmarshal(decodedXML, resp)
@@ -73,7 +75,7 @@ func (sp *ServiceProvider) ValidateResponse(resp *Response) error {
 		return errors.New("assertion has expired on: " + expires)
 	}
 
-	// check for signature at top level and Assertion level
+	// check for signature in root then Assertion
 	attributeID := ""
 	if len(resp.Signature.SignatureValue.Value) > 0 {
 		attributeID = ResponseXMLID
@@ -85,6 +87,7 @@ func (sp *ServiceProvider) ValidateResponse(resp *Response) error {
 		return errors.New("no signature found")
 	}
 
+	// only checks the first signature found
 	err = xmlsec.VerifySignature(resp.originalString, sp.IDPPublicCertPath, attributeID)
 	if err != nil {
 		return err
@@ -251,8 +254,8 @@ func NewResponse() *Response {
 }
 
 // AddAttribute add attribute to the Response
-func (r *Response) AddAttribute(name, value string) {
-	r.Assertion.AttributeStatement.Attributes = append(r.Assertion.AttributeStatement.Attributes, Attribute{
+func (resp *Response) AddAttribute(name, value string) {
+	resp.Assertion.AttributeStatement.Attributes = append(resp.Assertion.AttributeStatement.Attributes, Attribute{
 		XMLName: xml.Name{
 			Local: "saml:Attribute",
 		},
@@ -270,8 +273,8 @@ func (r *Response) AddAttribute(name, value string) {
 	})
 }
 
-func (r *Response) String() (string, error) {
-	b, err := xml.MarshalIndent(r, "", "    ")
+func (resp *Response) String() (string, error) {
+	b, err := xml.MarshalIndent(resp, "", "    ")
 	if err != nil {
 		return "", err
 	}
@@ -279,8 +282,8 @@ func (r *Response) String() (string, error) {
 	return string(b), nil
 }
 
-func (r *Response) SignedString(privateKeyPath string) (string, error) {
-	s, err := r.String()
+func (resp *Response) SignedString(privateKeyPath string) (string, error) {
+	s, err := resp.String()
 	if err != nil {
 		return "", err
 	}
@@ -288,8 +291,8 @@ func (r *Response) SignedString(privateKeyPath string) (string, error) {
 	return xmlsec.Sign(s, privateKeyPath, ResponseXMLID)
 }
 
-func (r *Response) EncodedSignedString(privateKeyPath string) (string, error) {
-	signed, err := r.SignedString(privateKeyPath)
+func (resp *Response) EncodedSignedString(privateKeyPath string) (string, error) {
+	signed, err := resp.SignedString(privateKeyPath)
 	if err != nil {
 		return "", err
 	}
@@ -297,8 +300,8 @@ func (r *Response) EncodedSignedString(privateKeyPath string) (string, error) {
 	return b64XML, nil
 }
 
-func (r *Response) CompressedEncodedSignedString(privateKeyPath string) (string, error) {
-	signed, err := r.SignedString(privateKeyPath)
+func (resp *Response) CompressedEncodedSignedString(privateKeyPath string) (string, error) {
+	signed, err := resp.SignedString(privateKeyPath)
 	if err != nil {
 		return "", err
 	}
