@@ -269,3 +269,40 @@ func (r *Response) AddAttribute(name, value string) {
 		},
 	})
 }
+
+func (r *Response) String() (string, error) {
+	b, err := xml.MarshalIndent(r, "", "    ")
+	if err != nil {
+		return "", err
+	}
+
+	return string(b), nil
+}
+
+func (r *Response) SignedString(privateKeyPath string) (string, error) {
+	s, err := r.String()
+	if err != nil {
+		return "", err
+	}
+
+	return xmlsec.Sign(s, privateKeyPath, ResponseXMLID)
+}
+
+func (r *Response) EncodedSignedString(privateKeyPath string) (string, error) {
+	signed, err := r.SignedString(privateKeyPath)
+	if err != nil {
+		return "", err
+	}
+	b64XML := base64.StdEncoding.EncodeToString([]byte(signed))
+	return b64XML, nil
+}
+
+func (r *Response) CompressedEncodedSignedString(privateKeyPath string) (string, error) {
+	signed, err := r.SignedString(privateKeyPath)
+	if err != nil {
+		return "", err
+	}
+	compressed := util.Compress([]byte(signed))
+	b64XML := base64.StdEncoding.EncodeToString(compressed)
+	return b64XML, nil
+}
