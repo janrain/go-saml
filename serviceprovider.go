@@ -17,6 +17,7 @@ type ServiceProvider struct {
 	IDPSSOURL                   string
 	IDPSSODescriptorURL         string
 	IDPPublicCertPath           string
+	IDPTrustedCertPaths         []string
 	AssertionConsumerServiceURL string
 	SignRequest                 bool
 	CompressRequest             bool

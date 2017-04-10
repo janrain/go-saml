@@ -59,6 +59,6 @@ func TestSignAndVerifyXML(t *testing.T) {
 	assert.NoError(err)
 	assert.NotEmpty(signed)
 
-	err = xmlsec.VerifySignature(signed, "./testdata/default.crt", "TestXML")
+	err = xmlsec.VerifySignature(signed, "./testdata/default.crt", nil, "TestXML")
 	assert.NoError(err)
 }

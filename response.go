@@ -88,7 +88,7 @@ func (sp *ServiceProvider) ValidateResponse(resp *Response) error {
 	}
 
 	// only checks the first signature found
-	err = xmlsec.VerifySignature(resp.originalString, sp.IDPPublicCertPath, attributeID)
+	err = xmlsec.VerifySignature(resp.originalString, sp.IDPPublicCertPath, sp.IDPTrustedCertPaths, attributeID)
 	if err != nil {
 		return err
 	}

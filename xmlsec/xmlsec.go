@@ -44,9 +44,9 @@ func Sign(xml, privateKeyPath, idAttribute string) (string, error) {
 }
 
 // VerifySignature verifies the signature of a signed XML document
-// `publicCertPath` must be a path on the filesystem because xmlsec1 is
-// run out of process through `exec`
-func VerifySignature(xml, publicCertPath, idAttribute string) error {
+// `publicCertPath` and `trustedCertPaths` must be paths to a pem encoded cert
+// on the filesystem because xmlsec1 is run out of process through `exec`
+func VerifySignature(xml, publicCertPath string, trustedCertPaths []string, idAttribute string) error {
 	xmlsecInput, err := ioutil.TempFile(os.TempDir(), "tmpgs")
 	if err != nil {
 		return err
@@ -56,7 +56,17 @@ func VerifySignature(xml, publicCertPath, idAttribute string) error {
 	xmlsecInput.Close()
 	defer deleteTempFile(xmlsecInput.Name())
 
-	output, err := exec.Command("xmlsec1", "--verify", "--pubkey-cert-pem", publicCertPath, "--id-attr:ID", idAttribute, xmlsecInput.Name()).CombinedOutput()
+	args := []string{
+		"--verify",
+		"--pubkey-cert-pem",
+		publicCertPath,
+	}
+	// add optional intermediate/root certs
+	for _, p := range trustedCertPaths {
+		args = append(args, "--trusted-pem", p)
+	}
+	args = append(args, "--id-attr:ID", idAttribute, xmlsecInput.Name())
+	output, err := exec.Command("xmlsec1", args...).CombinedOutput()
 	if err != nil {
 		return errors.New("error verifying signature: " + err.Error() + ", " + string(output))
 	}
