@@ -12,7 +12,7 @@ import (
 
 const (
 	ResponseXMLID          = "urn:oasis:names:tc:SAML:2.0:protocol:Response"
-	ResponseAssertionXMLID = "Assertion"
+	ResponseAssertionXMLID = "urn:oasis:names:tc:SAML:2.0:assertion:Assertion"
 )
 
 // ParseResponse decodes a SAML Response
