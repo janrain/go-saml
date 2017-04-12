@@ -6,94 +6,97 @@ import (
 	"errors"
 	"time"
 
-	"github.com/RobotsAndPencils/go-saml/util"
+	"github.com/janrain/go-saml/util"
+	"github.com/janrain/go-saml/xmlsec"
 )
 
-func ParseCompressedEncodedResponse(b64ResponseXML string) (*Response, error) {
-	authnResponse := Response{}
-	compressedXML, err := base64.StdEncoding.DecodeString(b64ResponseXML)
-	if err != nil {
-		return nil, err
-	}
-	bXML := util.Decompress(compressedXML)
-	err = xml.Unmarshal(bXML, &authnResponse)
+const (
+	ResponseXMLID          = "urn:oasis:names:tc:SAML:2.0:protocol:Response"
+	ResponseAssertionXMLID = "urn:oasis:names:tc:SAML:2.0:assertion:Assertion"
+)
+
+// ParseResponse decodes a SAML Response
+func ParseResponse(encodedXML string) (*Response, error) {
+	decodedXML, err := base64.StdEncoding.DecodeString(encodedXML)
 	if err != nil {
 		return nil, err
 	}
 
-	// There is a bug with XML namespaces in Go that's causing XML attributes with colons to not be roundtrip
+	decompressedXML, err := util.Decompress(decodedXML)
+	if err == nil {
+		decodedXML = decompressedXML
+	}
+	// if there was an error during decompression, assume it wasn't compressed
+
+	resp := &Response{}
+	err = xml.Unmarshal(decodedXML, resp)
+	if err != nil {
+		return nil, err
+	}
+
+	// There is a bug with XML namespaces in Go that's causing them to not be roundtrip
 	// marshal and unmarshaled so we'll keep the original string around for validation.
-	authnResponse.originalString = string(bXML)
-	return &authnResponse, nil
-
+	resp.originalString = string(decodedXML)
+	return resp, nil
 }
 
-func ParseEncodedResponse(b64ResponseXML string) (*Response, error) {
-	response := Response{}
-	bytesXML, err := base64.StdEncoding.DecodeString(b64ResponseXML)
-	if err != nil {
-		return nil, err
-	}
-	err = xml.Unmarshal(bytesXML, &response)
-	if err != nil {
-		return nil, err
-	}
-
-	// There is a bug with XML namespaces in Go that's causing XML attributes with colons to not be roundtrip
-	// marshal and unmarshaled so we'll keep the original string around for validation.
-	response.originalString = string(bytesXML)
-	// fmt.Println(response.originalString)
-	return &response, nil
-}
-
-func (r *Response) Validate(s *ServiceProviderSettings) error {
-	if r.Version != "2.0" {
+// ValidateResponse validates a Response
+func (sp *ServiceProvider) ValidateResponse(resp *Response) error {
+	if resp.Version != "2.0" {
 		return errors.New("unsupported SAML Version")
 	}
 
-	if len(r.ID) == 0 {
+	if len(resp.ID) == 0 {
 		return errors.New("missing ID attribute on SAML Response")
 	}
 
-	if len(r.Assertion.ID) == 0 {
+	if len(resp.Assertion.ID) == 0 {
 		return errors.New("no Assertions")
 	}
 
-	if len(r.Signature.SignatureValue.Value) == 0 {
-		return errors.New("no signature")
+	if resp.Destination != sp.AssertionConsumerServiceURL {
+		return errors.New("destination mismatch, expected: " + sp.AssertionConsumerServiceURL + " not " + resp.Destination)
 	}
 
-	if r.Destination != s.AssertionConsumerServiceURL {
-		return errors.New("destination mismath expected: " + s.AssertionConsumerServiceURL + " not " + r.Destination)
-	}
-
-	if r.Assertion.Subject.SubjectConfirmation.Method != "urn:oasis:names:tc:SAML:2.0:cm:bearer" {
+	if resp.Assertion.Subject.SubjectConfirmation.Method != "urn:oasis:names:tc:SAML:2.0:cm:bearer" {
 		return errors.New("assertion method exception")
 	}
 
-	if r.Assertion.Subject.SubjectConfirmation.SubjectConfirmationData.Recipient != s.AssertionConsumerServiceURL {
-		return errors.New("subject recipient mismatch, expected: " + s.AssertionConsumerServiceURL + " not " + r.Assertion.Subject.SubjectConfirmation.SubjectConfirmationData.Recipient)
+	if resp.Assertion.Subject.SubjectConfirmation.SubjectConfirmationData.Recipient != sp.AssertionConsumerServiceURL {
+		return errors.New("subject recipient mismatch, expected: " + sp.AssertionConsumerServiceURL + " not " + resp.Assertion.Subject.SubjectConfirmation.SubjectConfirmationData.Recipient)
 	}
 
-	err := VerifyResponseSignature(r.originalString, s.IDPPublicCertPath)
+	expires := resp.Assertion.Subject.SubjectConfirmation.SubjectConfirmationData.NotOnOrAfter
+	notOnOrAfter, err := time.Parse(time.RFC3339, expires)
 	if err != nil {
 		return err
-	}
-
-	//CHECK TIMES
-	expires := r.Assertion.Subject.SubjectConfirmation.SubjectConfirmationData.NotOnOrAfter
-	notOnOrAfter, e := time.Parse(time.RFC3339, expires)
-	if e != nil {
-		return e
 	}
 	if notOnOrAfter.Before(time.Now()) {
 		return errors.New("assertion has expired on: " + expires)
 	}
 
+	// check for signature in root then Assertion
+	attributeID := ""
+	if len(resp.Signature.SignatureValue.Value) > 0 {
+		attributeID = ResponseXMLID
+	} else if len(resp.Assertion.Signature.SignatureValue.Value) > 0 {
+		attributeID = ResponseAssertionXMLID
+	}
+
+	if attributeID == "" {
+		return errors.New("no signature found")
+	}
+
+	// only checks the first signature found
+	err = xmlsec.VerifySignature(resp.originalString, sp.IDPPublicCertPath, sp.IDPTrustedCertPaths, attributeID)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func NewSignedResponse() *Response {
+func NewResponse() *Response {
 	return &Response{
 		XMLName: xml.Name{
 			Local: "samlp:Response",
@@ -250,9 +253,9 @@ func NewSignedResponse() *Response {
 	}
 }
 
-// AddAttribute add strong attribute to the Response
-func (r *Response) AddAttribute(name, value string) {
-	r.Assertion.AttributeStatement.Attributes = append(r.Assertion.AttributeStatement.Attributes, Attribute{
+// AddAttribute add attribute to the Response
+func (resp *Response) AddAttribute(name, value string) {
+	resp.Assertion.AttributeStatement.Attributes = append(resp.Assertion.AttributeStatement.Attributes, Attribute{
 		XMLName: xml.Name{
 			Local: "saml:Attribute",
 		},
@@ -270,8 +273,8 @@ func (r *Response) AddAttribute(name, value string) {
 	})
 }
 
-func (r *Response) String() (string, error) {
-	b, err := xml.MarshalIndent(r, "", "    ")
+func (resp *Response) String() (string, error) {
+	b, err := xml.MarshalIndent(resp, "", "    ")
 	if err != nil {
 		return "", err
 	}
@@ -279,17 +282,17 @@ func (r *Response) String() (string, error) {
 	return string(b), nil
 }
 
-func (r *Response) SignedString(privateKeyPath string) (string, error) {
-	s, err := r.String()
+func (resp *Response) SignedString(privateKeyPath string) (string, error) {
+	s, err := resp.String()
 	if err != nil {
 		return "", err
 	}
 
-	return SignResponse(s, privateKeyPath)
+	return xmlsec.Sign(s, privateKeyPath, ResponseXMLID)
 }
 
-func (r *Response) EncodedSignedString(privateKeyPath string) (string, error) {
-	signed, err := r.SignedString(privateKeyPath)
+func (resp *Response) EncodedSignedString(privateKeyPath string) (string, error) {
+	signed, err := resp.SignedString(privateKeyPath)
 	if err != nil {
 		return "", err
 	}
@@ -297,34 +300,12 @@ func (r *Response) EncodedSignedString(privateKeyPath string) (string, error) {
 	return b64XML, nil
 }
 
-func (r *Response) CompressedEncodedSignedString(privateKeyPath string) (string, error) {
-	signed, err := r.SignedString(privateKeyPath)
+func (resp *Response) CompressedEncodedSignedString(privateKeyPath string) (string, error) {
+	signed, err := resp.SignedString(privateKeyPath)
 	if err != nil {
 		return "", err
 	}
 	compressed := util.Compress([]byte(signed))
 	b64XML := base64.StdEncoding.EncodeToString(compressed)
 	return b64XML, nil
-}
-
-// GetAttribute by Name or by FriendlyName. Return blank string if not found
-func (r *Response) GetAttribute(name string) string {
-	for _, attr := range r.Assertion.AttributeStatement.Attributes {
-		if attr.Name == name || attr.FriendlyName == name {
-			return attr.AttributeValues[0].Value
-		}
-	}
-	return ""
-}
-
-func (r *Response) GetAttributeValues(name string) []string {
-	var values []string
-	for _, attr := range r.Assertion.AttributeStatement.Attributes {
-		if attr.Name == name || attr.FriendlyName == name {
-			for _, v := range attr.AttributeValues {
-				values = append(values, v.Value)
-			}
-		}
-	}
-	return values
 }

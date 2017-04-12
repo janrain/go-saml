@@ -11,7 +11,6 @@ build: vet
 
 init:
 	go get github.com/nu7hatch/gouuid
-	go get github.com/kardianos/osext
 	go get github.com/stretchr/testify/assert
 
 vet: init

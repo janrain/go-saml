@@ -15,12 +15,15 @@ func CompressString(in string) string {
 	return buf.String()
 }
 
-func DecompressString(in string) string {
+func DecompressString(in string) (string, error) {
 	buf := new(bytes.Buffer)
 	decompressor := flate.NewReader(strings.NewReader(in))
-	io.Copy(buf, decompressor)
-	decompressor.Close()
-	return buf.String()
+	defer decompressor.Close()
+	_, err := io.Copy(buf, decompressor)
+	if err != nil {
+		return buf.String(), err
+	}
+	return buf.String(), nil
 }
 
 func Compress(in []byte) []byte {
@@ -31,10 +34,13 @@ func Compress(in []byte) []byte {
 	return buf.Bytes()
 }
 
-func Decompress(in []byte) []byte {
+func Decompress(in []byte) ([]byte, error) {
 	buf := new(bytes.Buffer)
 	decompressor := flate.NewReader(bytes.NewReader(in))
-	io.Copy(buf, decompressor)
-	decompressor.Close()
-	return buf.Bytes()
+	defer decompressor.Close()
+	_, err := io.Copy(buf, decompressor)
+	if err != nil {
+		return buf.Bytes(), err
+	}
+	return buf.Bytes(), nil
 }
