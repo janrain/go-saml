@@ -17,7 +17,7 @@ func (sp *ServiceProvider) AuthnRequest() *AuthnRequest {
 	ar := NewAuthnRequest()
 	ar.AssertionConsumerServiceURL = sp.AssertionConsumerServiceURL
 	ar.Destination = sp.IDPSSOURL
-	ar.Issuer.Url = sp.IDPSSODescriptorURL
+	ar.Issuer.Url = sp.IssuerURL
 	ar.Signature.KeyInfo.X509Data.X509Certificate.Cert = sp.PublicCert()
 
 	if !sp.SignRequest {

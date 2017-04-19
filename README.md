@@ -25,14 +25,14 @@ Below are samples to show how you might use the library.
 
 ```go
 sp := &saml.ServiceProvider{
+  IDPSSOURL:                   "http://idp/saml2", // idp's authentication url
+  IDPPublicCertPath:           "/certs/idpcert.crt", // filesystem path to idp's cert
+  IssuerURL:                   "http://localhost:8000", // your base url
+  AssertionConsumerServiceURL: "http://localhost:8000/saml_consume", // your callback url after authentication at IDP
   PublicCertPath:              "/certs/default.crt", // filesystem path to your cert
   PrivateKeyPath:              "/certs/default.key", // filesystem path to your private key
-  IDPSSOURL:                   "http://idp/saml2", // idp's authentication url
-  IDPSSODescriptorURL:         "http://idp/issuer", // idp's issuer url
-  IDPPublicCertPath:           "/certs/idpcert.crt", // filesystem path to idp's cert
   SignRequest:                 true, // whether to sign authentication requests
   UseCompression:              true, // whether to compress requests and decompress responses
-  AssertionConsumerServiceURL: "http://localhost:8000/saml_consume", // your callback url after authentication at IDP
 }
 sp.Init()
 
