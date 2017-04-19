@@ -51,8 +51,8 @@ func (s *ResponseTestSuite) SetupTest() {
 		PublicCertPath:              "./xmlsec/testdata/default.crt",
 		PrivateKeyPath:              "./xmlsec/testdata/default.key",
 		IDPSSOURL:                   "http://www.onelogin.net",
-		IDPSSODescriptorURL:         "http://www.onelogin.net",
 		IDPPublicCertPath:           "./xmlsec/testdata/default.crt",
+		IssuerURL:                   "http://localhost:8000",
 		AssertionConsumerServiceURL: "http://localhost:8080/callback",
 		SignRequest:                 true,
 	}

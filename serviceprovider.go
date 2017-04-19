@@ -12,13 +12,13 @@ import (
 // If you need to configure multipe IDPs for an SP then configure
 // multiple instances of this module.
 type ServiceProvider struct {
-	PublicCertPath              string
-	PrivateKeyPath              string
 	IDPSSOURL                   string
-	IDPSSODescriptorURL         string
 	IDPPublicCertPath           string
 	IDPTrustedCertPaths         []string
+	IssuerURL                   string
 	AssertionConsumerServiceURL string
+	PublicCertPath              string
+	PrivateKeyPath              string
 	SignRequest                 bool
 	CompressRequest             bool
 
