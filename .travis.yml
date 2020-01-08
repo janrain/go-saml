@@ -1,5 +1,5 @@
 language: go
-sudo: false
-
 go:
-  - tip
+  - 1.x
+script:
+  go test ./...
