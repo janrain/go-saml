@@ -1,51 +1,86 @@
 package saml_test
 
 import (
+	"crypto/rsa"
+	"crypto/x509"
 	"testing"
 
 	"github.com/janrain/go-saml"
+	"github.com/janrain/go-saml/util"
 
 	"github.com/stretchr/testify/suite"
 )
 
-type AuthnRequestTestSuite struct {
+const (
+	arACS         = "http://localhost/acs"
+	arIssuer      = "http://localhost"
+	arDestination = "http://idp.test"
+	arXPath       = "/AuthnRequest"
+)
+
+type AuthnRequestSuite struct {
 	suite.Suite
-	sp *saml.ServiceProvider
-	ar *saml.AuthnRequest
+	privateKey *rsa.PrivateKey
+	publicCert *x509.Certificate
+	ar         *saml.AuthnRequest
 }
 
-func (s *AuthnRequestTestSuite) SetupTest() {
-	s.sp = &saml.ServiceProvider{
-		PublicCertPath:              "./xmlsec/testdata/default.crt",
-		PrivateKeyPath:              "./xmlsec/testdata/default.key",
-		IDPSSOURL:                   "http://www.onelogin.net",
-		IDPPublicCertPath:           "./xmlsec/testdata/default.crt",
-		IssuerURL:                   "http://localhost:8000",
-		AssertionConsumerServiceURL: "http://localhost:8000/auth/saml/name",
-		SignRequest:                 true,
-		CompressRequest:             true,
+func (s *AuthnRequestSuite) SetupSuite() {
+	s.privateKey, s.publicCert = util.TestKeyPair()
+	s.ar = saml.NewAuthnRequest(arIssuer, arACS, arDestination)
+}
+
+func (s *AuthnRequestSuite) ValidateAuthnRequest(ar *saml.AuthnRequest, signed bool) {
+	s.Equal(arACS, ar.AssertionConsumerServiceURL)
+	s.Equal(arIssuer, ar.Issuer.Value)
+	s.Equal(arDestination, ar.Destination)
+
+	if signed {
+		err := ar.VerifySignature(arXPath, []*x509.Certificate{s.publicCert})
+		s.NoError(err)
 	}
-	err := s.sp.Init()
-	if err != nil {
-		panic(err)
-	}
-	s.ar = s.sp.AuthnRequest()
 }
 
-func (s *AuthnRequestTestSuite) TestSignedAuthnRequest() {
-	encoded, err := s.sp.EncodeAuthnRequest(s.ar)
+func (s *AuthnRequestSuite) TestSignedString() {
+	x, err := s.ar.SignedString(arXPath, s.privateKey, s.publicCert)
 	s.NoError(err)
-	s.NotEmpty(encoded)
 
-	u, err := s.sp.AuthnRequestURL(encoded, "asdf")
+	parsedAr, err := saml.ParseAuthnRequest(x)
 	s.NoError(err)
-	s.Equal("http", u.Scheme)
-	s.Equal("www.onelogin.net", u.Host)
-	q := u.Query()
-	s.Equal(encoded, q.Get("SAMLRequest"))
-	s.Equal("asdf", q.Get("RelayState"))
+
+	s.ValidateAuthnRequest(parsedAr, true)
 }
 
-func TestAuthnRequest(t *testing.T) {
-	suite.Run(t, &AuthnRequestTestSuite{})
+func (s *AuthnRequestSuite) TestEncodedString() {
+	x, err := s.ar.EncodedString()
+	s.NoError(err)
+
+	parsedAr, err := saml.ParseEncodedAuthnRequest(x)
+	s.NoError(err)
+
+	s.ValidateAuthnRequest(parsedAr, false)
+}
+
+func (s *AuthnRequestSuite) TestCompressedEncodedString() {
+	x, err := s.ar.CompressedEncodedString()
+	s.NoError(err)
+
+	parsedAr, err := saml.ParseEncodedAuthnRequest(x)
+	s.NoError(err)
+
+	s.ValidateAuthnRequest(parsedAr, false)
+}
+
+func (s *AuthnRequestSuite) TestCompressedEncodedSignedString() {
+	x, err := s.ar.CompressedEncodedSignedString(arXPath, s.privateKey, s.publicCert)
+	s.NoError(err)
+
+	parsedAr, err := saml.ParseEncodedAuthnRequest(x)
+	s.NoError(err)
+
+	s.ValidateAuthnRequest(parsedAr, true)
+}
+
+func TestAuthnRequestSuite(t *testing.T) {
+	suite.Run(t, &AuthnRequestSuite{})
 }

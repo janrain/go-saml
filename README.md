@@ -7,14 +7,9 @@ A just good enough SAML client library written in Go.
 
 The library supports:
 
-* generating signed/unsigned AuthnRequests
-* validating signed Responses
+* generating signed/unsigned AuthnRequests and Responses
+* validating signed AuthnRequests and Responses
 * generating service provider metadata
-
-### Prerequisites
-
-The `xmlsec1` command must be installed - this library uses it to
-sign and verify XML signatures.
 
 Usage
 -----
@@ -26,15 +21,14 @@ Below are samples to show how you might use the library.
 ```go
 sp := &saml.ServiceProvider{
   IDPSSOURL:                   "http://idp/saml2", // idp's authentication url
-  IDPPublicCertPath:           "/certs/idpcert.crt", // filesystem path to idp's cert
-  IssuerURL:                   "http://localhost:8000", // your base url
+  IDPPublicCert:               idpPublicCert, // x502.Certificate of the IDP's public cert
+  IssuerURL:                   "http://localhost:8000", // your SP URL
   AssertionConsumerServiceURL: "http://localhost:8000/saml_consume", // your callback url after authentication at IDP
-  PublicCertPath:              "/certs/default.crt", // filesystem path to your cert
-  PrivateKeyPath:              "/certs/default.key", // filesystem path to your private key
+  PrivateKey:                  privateKey, // rsa.PrivateKey for your SP
+  PublicCert:                  publicCert, // x502.Certificate corresponding to privateKey
   SignRequest:                 true, // whether to sign authentication requests
   UseCompression:              true, // whether to compress requests and decompress responses
 }
-sp.Init()
 
 // generate the AuthnRequest
 authnRequest := sp.AuthnRequest()
@@ -56,7 +50,7 @@ if err != nil {
 
 
 ```go
-  resp, err := sp.ParseResponse(encodedXML)
+  resp, err := sp.ParseEncodedResponse(encodedXML)
   if err != nil {
     panic(err)
   }

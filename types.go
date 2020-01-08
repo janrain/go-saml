@@ -6,7 +6,6 @@ type AuthnRequest struct {
 	XMLName                        xml.Name
 	SAMLP                          string                `xml:"xmlns:samlp,attr"`
 	SAML                           string                `xml:"xmlns:saml,attr"`
-	SAMLSIG                        string                `xml:"xmlns:samlsig,attr,omitempty"`
 	ID                             string                `xml:"ID,attr"`
 	Version                        string                `xml:"Version,attr"`
 	ProtocolBinding                string                `xml:"ProtocolBinding,attr"`
@@ -19,12 +18,14 @@ type AuthnRequest struct {
 	NameIDPolicy                   NameIDPolicy          `xml:"NameIDPolicy"`
 	RequestedAuthnContext          RequestedAuthnContext `xml:"RequestedAuthnContext"`
 	Signature                      *Signature            `xml:"Signature,omitempty"`
+
+	originalString string
 }
 
 type Issuer struct {
 	XMLName xml.Name
-	SAML    string `xml:"xmlns:saml,attr"`
-	Url     string `xml:",innerxml"`
+	SAML    string `xml:"xmlns:saml,attr,omitempty"`
+	Value   string `xml:",innerxml"`
 }
 
 type NameIDPolicy struct {
@@ -48,10 +49,10 @@ type AuthnContextClassRef struct {
 
 type Signature struct {
 	XMLName        xml.Name
-	Id             string `xml:"Id,attr"`
-	SignedInfo     SignedInfo
-	SignatureValue SignatureValue
-	KeyInfo        KeyInfo
+	ID             string         `xml:"ID,attr"`
+	SignedInfo     SignedInfo     `xml:"SignedInfo"`
+	SignatureValue SignatureValue `xml:"SignatureValue"`
+	KeyInfo        KeyInfo        `xml:"KeyInfo"`
 }
 
 type SignedInfo struct {
@@ -123,7 +124,7 @@ type EntityDescriptor struct {
 	DS       string `xml:"xmlns:ds,attr"`
 	XMLNS    string `xml:"xmlns,attr"`
 	MD       string `xml:"xmlns:md,attr"`
-	EntityId string `xml:"entityID,attr"`
+	EntityID string `xml:"entityID,attr"`
 
 	Extensions      Extensions      `xml:"Extensions"`
 	SPSSODescriptor SPSSODescriptor `xml:"SPSSODescriptor"`
@@ -178,18 +179,16 @@ type AssertionConsumerService struct {
 type Response struct {
 	XMLName      xml.Name
 	SAMLP        string `xml:"xmlns:samlp,attr"`
-	SAML         string `xml:"xmlns:saml,attr"`
-	SAMLSIG      string `xml:"xmlns:samlsig,attr"`
 	Destination  string `xml:"Destination,attr"`
 	ID           string `xml:"ID,attr"`
 	Version      string `xml:"Version,attr"`
 	IssueInstant string `xml:"IssueInstant,attr"`
-	InResponseTo string `xml:"InResponseTo,attr"`
+	InResponseTo string `xml:"InResponseTo,attr,omitempty"`
 
-	Assertion Assertion `xml:"Assertion"`
-	Signature Signature `xml:"Signature"`
-	Issuer    Issuer    `xml:"Issuer"`
-	Status    Status    `xml:"Status"`
+	Assertion Assertion  `xml:"Assertion"`
+	Signature *Signature `xml:"Signature,omitempty"`
+	Issuer    Issuer     `xml:"Issuer"`
+	Status    Status     `xml:"Status"`
 
 	originalString string
 }
@@ -200,19 +199,30 @@ type Assertion struct {
 	Version            string `xml:"Version,attr"`
 	XS                 string `xml:"xmlns:xs,attr"`
 	XSI                string `xml:"xmlns:xsi,attr"`
-	SAML               string `xml:"saml,attr"`
+	SAML               string `xml:"xmlns:saml,attr"`
 	IssueInstant       string `xml:"IssueInstant,attr"`
 	Issuer             Issuer `xml:"Issuer"`
 	Subject            Subject
 	Conditions         Conditions
 	AttributeStatement AttributeStatement
-	Signature          Signature `xml:"Signature,omitempty"`
+	Signature          *Signature `xml:"Signature,omitempty"`
 }
 
 type Conditions struct {
-	XMLName      xml.Name
-	NotBefore    string `xml:",attr"`
-	NotOnOrAfter string `xml:",attr"`
+	XMLName             xml.Name
+	NotBefore           string `xml:",attr"`
+	NotOnOrAfter        string `xml:",attr"`
+	AudienceRestriction AudienceRestriction
+}
+
+type AudienceRestriction struct {
+	XMLName  xml.Name
+	Audience Audience
+}
+
+type Audience struct {
+	XMLName xml.Name
+	Value   string `xml:",innerxml"`
 }
 
 type Subject struct {
@@ -233,7 +243,8 @@ type Status struct {
 }
 
 type SubjectConfirmationData struct {
-	InResponseTo string `xml:",attr"`
+	XMLName      xml.Name
+	InResponseTo string `xml:",attr,omitempty"`
 	NotOnOrAfter string `xml:",attr"`
 	Recipient    string `xml:",attr"`
 }

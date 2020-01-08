@@ -1,25 +1,35 @@
 package saml
 
 import (
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/xml"
-	"errors"
+	"fmt"
 	"time"
 
 	"github.com/janrain/go-saml/util"
-	"github.com/janrain/go-saml/xmlsec"
+	"github.com/janrain/go-saml/xmldsig"
 )
 
-const (
-	ResponseXMLID          = "urn:oasis:names:tc:SAML:2.0:protocol:Response"
-	ResponseAssertionXMLID = "urn:oasis:names:tc:SAML:2.0:assertion:Assertion"
-)
+// ParseResponse parses a SAML Response
+func ParseResponse(rawXML string) (*Response, error) {
+	resp := &Response{}
+	err := xml.Unmarshal([]byte(rawXML), resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal xml: %w", err)
+	}
+	// There is a bug with XML namespaces in Go that's causing them to not be roundtrip
+	// marshal and unmarshaled so we'll keep the original string around for validation.
+	resp.originalString = rawXML
+	return resp, nil
+}
 
-// ParseResponse decodes a SAML Response
-func ParseResponse(encodedXML string) (*Response, error) {
+// ParseEncodedResponse parses an encoded, possibly compressed SAML Response
+func ParseEncodedResponse(encodedXML string) (*Response, error) {
 	decodedXML, err := base64.StdEncoding.DecodeString(encodedXML)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode xml: %w", err)
 	}
 
 	decompressedXML, err := util.Decompress(decodedXML)
@@ -28,163 +38,32 @@ func ParseResponse(encodedXML string) (*Response, error) {
 	}
 	// if there was an error during decompression, assume it wasn't compressed
 
-	resp := &Response{}
-	err = xml.Unmarshal(decodedXML, resp)
-	if err != nil {
-		return nil, err
-	}
-
-	// There is a bug with XML namespaces in Go that's causing them to not be roundtrip
-	// marshal and unmarshaled so we'll keep the original string around for validation.
-	resp.originalString = string(decodedXML)
-	return resp, nil
+	return ParseResponse(string(decodedXML))
 }
 
-// ValidateResponse validates a Response
-func (sp *ServiceProvider) ValidateResponse(resp *Response) error {
-	if resp.Version != "2.0" {
-		return errors.New("unsupported SAML Version")
-	}
-
-	if len(resp.ID) == 0 {
-		return errors.New("missing ID attribute on SAML Response")
-	}
-
-	if len(resp.Assertion.ID) == 0 {
-		return errors.New("no Assertions")
-	}
-
-	if resp.Destination != sp.AssertionConsumerServiceURL {
-		return errors.New("destination mismatch, expected: " + sp.AssertionConsumerServiceURL + " not " + resp.Destination)
-	}
-
-	if resp.Assertion.Subject.SubjectConfirmation.Method != "urn:oasis:names:tc:SAML:2.0:cm:bearer" {
-		return errors.New("assertion method exception")
-	}
-
-	if resp.Assertion.Subject.SubjectConfirmation.SubjectConfirmationData.Recipient != sp.AssertionConsumerServiceURL {
-		return errors.New("subject recipient mismatch, expected: " + sp.AssertionConsumerServiceURL + " not " + resp.Assertion.Subject.SubjectConfirmation.SubjectConfirmationData.Recipient)
-	}
-
-	expires := resp.Assertion.Subject.SubjectConfirmation.SubjectConfirmationData.NotOnOrAfter
-	notOnOrAfter, err := time.Parse(time.RFC3339, expires)
-	if err != nil {
-		return err
-	}
-	if notOnOrAfter.Before(time.Now()) {
-		return errors.New("assertion has expired on: " + expires)
-	}
-
-	// check for signature in root then Assertion
-	attributeID := ""
-	if len(resp.Signature.SignatureValue.Value) > 0 {
-		attributeID = ResponseXMLID
-	} else if len(resp.Assertion.Signature.SignatureValue.Value) > 0 {
-		attributeID = ResponseAssertionXMLID
-	}
-
-	if attributeID == "" {
-		return errors.New("no signature found")
-	}
-
-	// only checks the first signature found
-	err = xmlsec.VerifySignature(resp.originalString, sp.IDPPublicCertPath, sp.IDPTrustedCertPaths, attributeID)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func NewResponse() *Response {
+// NewResponse creates a new Response
+// issuer should be the IDP URL
+// destination should be the SP ACS URL
+// audience should be the SP entityID
+// subject should be the identifier of the assertion subject
+func NewResponse(issuer, audience, destination, subject string) *Response {
+	now := time.Now().UTC()
 	return &Response{
 		XMLName: xml.Name{
 			Local: "samlp:Response",
 		},
 		SAMLP:        "urn:oasis:names:tc:SAML:2.0:protocol",
-		SAML:         "urn:oasis:names:tc:SAML:2.0:assertion",
-		SAMLSIG:      "http://www.w3.org/2000/09/xmldsig#",
 		ID:           util.ID(),
 		Version:      "2.0",
-		IssueInstant: time.Now().UTC().Format(time.RFC3339Nano),
+		IssueInstant: now.Format(time.RFC3339Nano),
 		Issuer: Issuer{
 			XMLName: xml.Name{
 				Local: "saml:Issuer",
 			},
-			Url: "", // caller must populate ar.AppSettings.AssertionConsumerServiceURL,
+			SAML:  "urn:oasis:names:tc:SAML:2.0:assertion",
+			Value: issuer,
 		},
-		Signature: Signature{
-			XMLName: xml.Name{
-				Local: "samlsig:Signature",
-			},
-			Id: "Signature1",
-			SignedInfo: SignedInfo{
-				XMLName: xml.Name{
-					Local: "samlsig:SignedInfo",
-				},
-				CanonicalizationMethod: CanonicalizationMethod{
-					XMLName: xml.Name{
-						Local: "samlsig:CanonicalizationMethod",
-					},
-					Algorithm: "http://www.w3.org/2001/10/xml-exc-c14n#",
-				},
-				SignatureMethod: SignatureMethod{
-					XMLName: xml.Name{
-						Local: "samlsig:SignatureMethod",
-					},
-					Algorithm: "http://www.w3.org/2000/09/xmldsig#rsa-sha1",
-				},
-				SamlsigReference: SamlsigReference{
-					XMLName: xml.Name{
-						Local: "samlsig:Reference",
-					},
-					URI: "", // caller must populate "#" + ar.Id,
-					Transforms: Transforms{
-						XMLName: xml.Name{
-							Local: "samlsig:Transforms",
-						},
-						Transform: Transform{
-							XMLName: xml.Name{
-								Local: "samlsig:Transform",
-							},
-							Algorithm: "http://www.w3.org/2000/09/xmldsig#enveloped-signature",
-						},
-					},
-					DigestMethod: DigestMethod{
-						XMLName: xml.Name{
-							Local: "samlsig:DigestMethod",
-						},
-						Algorithm: "http://www.w3.org/2000/09/xmldsig#sha1",
-					},
-					DigestValue: DigestValue{
-						XMLName: xml.Name{
-							Local: "samlsig:DigestValue",
-						},
-					},
-				},
-			},
-			SignatureValue: SignatureValue{
-				XMLName: xml.Name{
-					Local: "samlsig:SignatureValue",
-				},
-			},
-			KeyInfo: KeyInfo{
-				XMLName: xml.Name{
-					Local: "samlsig:KeyInfo",
-				},
-				X509Data: X509Data{
-					XMLName: xml.Name{
-						Local: "samlsig:X509Data",
-					},
-					X509Certificate: X509Certificate{
-						XMLName: xml.Name{
-							Local: "samlsig:X509Certificate",
-						},
-						Cert: "", // caller must populate cert,
-					},
-				},
-			},
-		},
+		Destination: destination,
 		Status: Status{
 			XMLName: xml.Name{
 				Local: "samlp:Status",
@@ -193,7 +72,6 @@ func NewResponse() *Response {
 				XMLName: xml.Name{
 					Local: "samlp:StatusCode",
 				},
-				// TODO unsuccesful responses??
 				Value: "urn:oasis:names:tc:SAML:2.0:status:Success",
 			},
 		},
@@ -206,12 +84,12 @@ func NewResponse() *Response {
 			SAML:         "urn:oasis:names:tc:SAML:2.0:assertion",
 			Version:      "2.0",
 			ID:           util.ID(),
-			IssueInstant: time.Now().UTC().Format(time.RFC3339Nano),
+			IssueInstant: now.Format(time.RFC3339Nano),
 			Issuer: Issuer{
 				XMLName: xml.Name{
 					Local: "saml:Issuer",
 				},
-				Url: "", // caller must populate ar.AppSettings.AssertionConsumerServiceURL,
+				Value: issuer,
 			},
 			Subject: Subject{
 				XMLName: xml.Name{
@@ -222,7 +100,7 @@ func NewResponse() *Response {
 						Local: "saml:NameID",
 					},
 					Format: "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified",
-					Value:  "",
+					Value:  subject,
 				},
 				SubjectConfirmation: SubjectConfirmation{
 					XMLName: xml.Name{
@@ -230,9 +108,11 @@ func NewResponse() *Response {
 					},
 					Method: "urn:oasis:names:tc:SAML:2.0:cm:bearer",
 					SubjectConfirmationData: SubjectConfirmationData{
-						InResponseTo: "",
-						NotOnOrAfter: time.Now().Add(time.Minute * 5).UTC().Format(time.RFC3339Nano),
-						Recipient:    "",
+						XMLName: xml.Name{
+							Local: "saml:SubjectConfirmationData",
+						},
+						NotOnOrAfter: now.Add(time.Minute * 5).Format(time.RFC3339Nano),
+						Recipient:    destination,
 					},
 				},
 			},
@@ -240,8 +120,19 @@ func NewResponse() *Response {
 				XMLName: xml.Name{
 					Local: "saml:Conditions",
 				},
-				NotBefore:    time.Now().Add(time.Minute * -5).UTC().Format(time.RFC3339Nano),
-				NotOnOrAfter: time.Now().Add(time.Minute * 5).UTC().Format(time.RFC3339Nano),
+				NotBefore:    now.Add(time.Minute * -5).Format(time.RFC3339Nano),
+				NotOnOrAfter: now.Add(time.Minute * 5).Format(time.RFC3339Nano),
+				AudienceRestriction: AudienceRestriction{
+					XMLName: xml.Name{
+						Local: "saml:AudienceRestriction",
+					},
+					Audience: Audience{
+						XMLName: xml.Name{
+							Local: "saml:Audience",
+						},
+						Value: audience,
+					},
+				},
 			},
 			AttributeStatement: AttributeStatement{
 				XMLName: xml.Name{
@@ -253,14 +144,14 @@ func NewResponse() *Response {
 	}
 }
 
-// AddAttribute add attribute to the Response
+// AddAttribute adds an attribute to the response assertion
 func (resp *Response) AddAttribute(name, value string) {
 	resp.Assertion.AttributeStatement.Attributes = append(resp.Assertion.AttributeStatement.Attributes, Attribute{
 		XMLName: xml.Name{
 			Local: "saml:Attribute",
 		},
 		Name:       name,
-		NameFormat: "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
+		NameFormat: "urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified",
 		AttributeValues: []AttributeValue{
 			{
 				XMLName: xml.Name{
@@ -273,39 +164,65 @@ func (resp *Response) AddAttribute(name, value string) {
 	})
 }
 
+// String returns the response as a string
 func (resp *Response) String() (string, error) {
 	b, err := xml.MarshalIndent(resp, "", "    ")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to marshal xml: %w", err)
 	}
 
 	return string(b), nil
 }
 
-func (resp *Response) SignedString(privateKeyPath string) (string, error) {
+// SignedString returns the response as a string with signature included
+func (resp *Response) SignedString(xPath string, privateKey *rsa.PrivateKey, publicCert *x509.Certificate) (string, error) {
 	s, err := resp.String()
 	if err != nil {
 		return "", err
 	}
 
-	return xmlsec.Sign(s, privateKeyPath, ResponseXMLID)
+	return xmldsig.Sign(s, xPath, privateKey, publicCert)
 }
 
-func (resp *Response) EncodedSignedString(privateKeyPath string) (string, error) {
-	signed, err := resp.SignedString(privateKeyPath)
+// EncodedSignedString returns the response base64 encoded and signed
+func (resp *Response) EncodedSignedString(xPath string, privateKey *rsa.PrivateKey, publicCert *x509.Certificate) (string, error) {
+	signed, err := resp.SignedString(xPath, privateKey, publicCert)
 	if err != nil {
 		return "", err
 	}
-	b64XML := base64.StdEncoding.EncodeToString([]byte(signed))
-	return b64XML, nil
+	return base64.StdEncoding.EncodeToString([]byte(signed)), nil
 }
 
-func (resp *Response) CompressedEncodedSignedString(privateKeyPath string) (string, error) {
-	signed, err := resp.SignedString(privateKeyPath)
+// CompressedEncodedSignedString returns the response compressed, base64 encoded, and signed
+func (resp *Response) CompressedEncodedSignedString(xPath string, privateKey *rsa.PrivateKey, publicCert *x509.Certificate) (string, error) {
+	signed, err := resp.SignedString(xPath, privateKey, publicCert)
 	if err != nil {
 		return "", err
 	}
 	compressed := util.Compress([]byte(signed))
-	b64XML := base64.StdEncoding.EncodeToString(compressed)
-	return b64XML, nil
+	return base64.StdEncoding.EncodeToString(compressed), nil
+}
+
+// EncodedString returns the response base64 encoded
+func (resp *Response) EncodedString() (string, error) {
+	s, err := resp.String()
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString([]byte(s)), nil
+}
+
+// CompressedEncodedString returns the response compressed and base64 encoded
+func (resp *Response) CompressedEncodedString() (string, error) {
+	s, err := resp.String()
+	if err != nil {
+		return "", err
+	}
+	compressed := util.Compress([]byte(s))
+	return base64.StdEncoding.EncodeToString(compressed), nil
+}
+
+// VerifySignature verifies the signature
+func (resp *Response) VerifySignature(xPath string, certs []*x509.Certificate) error {
+	return xmldsig.VerifySignature(resp.originalString, xPath, certs)
 }

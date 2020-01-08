@@ -1,85 +1,69 @@
 package saml
 
 import (
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/xml"
-	"net/url"
+	"fmt"
 	"time"
 
 	"github.com/janrain/go-saml/util"
-	"github.com/janrain/go-saml/xmlsec"
+	"github.com/janrain/go-saml/xmldsig"
 )
 
-const RequestXMLID = "urn:oasis:names:tc:SAML:2.0:protocol:AuthnRequest"
-
-// AuthnRequest creates an AuthnRequest object
-func (sp *ServiceProvider) AuthnRequest() *AuthnRequest {
-	ar := NewAuthnRequest()
-	ar.AssertionConsumerServiceURL = sp.AssertionConsumerServiceURL
-	ar.Destination = sp.IDPSSOURL
-	ar.Issuer.Url = sp.IssuerURL
-	ar.Signature.KeyInfo.X509Data.X509Certificate.Cert = sp.PublicCert()
-
-	if !sp.SignRequest {
-		ar.SAMLSIG = ""
-		ar.Signature = nil
-	}
-
-	return ar
-}
-
-// EncodedAuthnRequest returns an encoded AuthnRequest
-func (sp *ServiceProvider) EncodeAuthnRequest(ar *AuthnRequest) (string, error) {
-	if sp.SignRequest {
-		if sp.CompressRequest {
-			return ar.CompressedEncodedSignedString(sp.PrivateKeyPath)
-		} else {
-			return ar.EncodedSignedString(sp.PrivateKeyPath)
-		}
-	} else {
-		if sp.CompressRequest {
-			return ar.CompressedEncodedString()
-		} else {
-			return ar.EncodedString()
-		}
-	}
-}
-
-// AuthnRequestURL generates a URL for the encoded AuthnRequest
-// with the SAMLRequest and RelayState query params set
-func (sp *ServiceProvider) AuthnRequestURL(encodedXML, state string) (*url.URL, error) {
-	u, err := url.Parse(sp.IDPSSOURL)
+// ParseAuthnRequest parses a SAML AuthnRequest
+func ParseAuthnRequest(rawXML string) (*AuthnRequest, error) {
+	ar := &AuthnRequest{}
+	err := xml.Unmarshal([]byte(rawXML), ar)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal xml: %w", err)
 	}
 
-	q := u.Query()
-	q.Add("SAMLRequest", encodedXML)
-	q.Add("RelayState", state)
-	u.RawQuery = q.Encode()
-	return u, nil
+	// There is a bug with XML namespaces in Go that's causing them to not be roundtrip
+	// marshal and unmarshaled so we'll keep the original string around for validation.
+	ar.originalString = rawXML
+	return ar, nil
+}
+
+// ParseEncodedAuthnRequest parses an encoded, possibly compressed SAML AuthnRequest
+func ParseEncodedAuthnRequest(encodedXML string) (*AuthnRequest, error) {
+	decodedXML, err := base64.StdEncoding.DecodeString(encodedXML)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode xml: %w", err)
+	}
+
+	decompressedXML, err := util.Decompress(decodedXML)
+	if err == nil {
+		decodedXML = decompressedXML
+	}
+	// if there was an error during decompression, assume it wasn't compressed
+
+	return ParseAuthnRequest(string(decodedXML))
 }
 
 // NewAuthnRequest constructs an AuthnRequest
-func NewAuthnRequest() *AuthnRequest {
-	id := util.ID()
+// issuer should be the SP URL
+// acs should be the SP ACS URL
+// destination should IDP URL
+func NewAuthnRequest(issuer, acs, destination string) *AuthnRequest {
 	return &AuthnRequest{
 		XMLName: xml.Name{
 			Local: "samlp:AuthnRequest",
 		},
 		SAMLP:                       "urn:oasis:names:tc:SAML:2.0:protocol",
 		SAML:                        "urn:oasis:names:tc:SAML:2.0:assertion",
-		SAMLSIG:                     "http://www.w3.org/2000/09/xmldsig#",
-		ID:                          id,
+		ID:                          util.ID(),
 		ProtocolBinding:             "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
 		Version:                     "2.0",
-		AssertionConsumerServiceURL: "", // caller must populate ar.AppSettings.AssertionConsumerServiceURL,
+		AssertionConsumerServiceURL: acs,
+		Destination:                 destination,
 		Issuer: Issuer{
 			XMLName: xml.Name{
 				Local: "saml:Issuer",
 			},
-			Url:  "", // caller must populate ar.AppSettings.Issuer
-			SAML: "urn:oasis:names:tc:SAML:2.0:assertion",
+			SAML:  "urn:oasis:names:tc:SAML:2.0:assertion",
+			Value: issuer,
 		},
 		IssueInstant: time.Now().UTC().Format(time.RFC3339),
 		NameIDPolicy: NameIDPolicy{
@@ -103,133 +87,68 @@ func NewAuthnRequest() *AuthnRequest {
 				Transport: "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport",
 			},
 		},
-		Signature: &Signature{
-			XMLName: xml.Name{
-				Local: "samlsig:Signature",
-			},
-			Id: "Signature1",
-			SignedInfo: SignedInfo{
-				XMLName: xml.Name{
-					Local: "samlsig:SignedInfo",
-				},
-				CanonicalizationMethod: CanonicalizationMethod{
-					XMLName: xml.Name{
-						Local: "samlsig:CanonicalizationMethod",
-					},
-					Algorithm: "http://www.w3.org/2001/10/xml-exc-c14n#",
-				},
-				SignatureMethod: SignatureMethod{
-					XMLName: xml.Name{
-						Local: "samlsig:SignatureMethod",
-					},
-					Algorithm: "http://www.w3.org/2000/09/xmldsig#rsa-sha1",
-				},
-				SamlsigReference: SamlsigReference{
-					XMLName: xml.Name{
-						Local: "samlsig:Reference",
-					},
-					URI: "#" + id,
-					Transforms: Transforms{
-						XMLName: xml.Name{
-							Local: "samlsig:Transforms",
-						},
-						Transform: Transform{
-							XMLName: xml.Name{
-								Local: "samlsig:Transform",
-							},
-							Algorithm: "http://www.w3.org/2000/09/xmldsig#enveloped-signature",
-						},
-					},
-					DigestMethod: DigestMethod{
-						XMLName: xml.Name{
-							Local: "samlsig:DigestMethod",
-						},
-						Algorithm: "http://www.w3.org/2000/09/xmldsig#sha1",
-					},
-					DigestValue: DigestValue{
-						XMLName: xml.Name{
-							Local: "samlsig:DigestValue",
-						},
-					},
-				},
-			},
-			SignatureValue: SignatureValue{
-				XMLName: xml.Name{
-					Local: "samlsig:SignatureValue",
-				},
-			},
-			KeyInfo: KeyInfo{
-				XMLName: xml.Name{
-					Local: "samlsig:KeyInfo",
-				},
-				X509Data: X509Data{
-					XMLName: xml.Name{
-						Local: "samlsig:X509Data",
-					},
-					X509Certificate: X509Certificate{
-						XMLName: xml.Name{
-							Local: "samlsig:X509Certificate",
-						},
-						Cert: "", // caller must populate cert,
-					},
-				},
-			},
-		},
 	}
 }
 
+// String returns the request as a string
 func (ar *AuthnRequest) String() (string, error) {
 	b, err := xml.MarshalIndent(ar, "", "\t")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to marshal xml: %w", err)
 	}
 
 	return string(b), nil
 }
 
-func (ar *AuthnRequest) SignedString(privateKeyPath string) (string, error) {
+// SignedString returns the request as a string with signature included
+func (ar *AuthnRequest) SignedString(xPath string, privateKey *rsa.PrivateKey, publicCert *x509.Certificate) (string, error) {
 	s, err := ar.String()
 	if err != nil {
 		return "", err
 	}
 
-	return xmlsec.Sign(s, privateKeyPath, RequestXMLID)
+	return xmldsig.Sign(s, xPath, privateKey, publicCert)
 }
 
-func (ar *AuthnRequest) EncodedSignedString(privateKeyPath string) (string, error) {
-	signed, err := ar.SignedString(privateKeyPath)
+// EncodedSignedString returns the request base64 encoded and signed
+func (ar *AuthnRequest) EncodedSignedString(xPath string, privateKey *rsa.PrivateKey, publicCert *x509.Certificate) (string, error) {
+	signed, err := ar.SignedString(xPath, privateKey, publicCert)
 	if err != nil {
 		return "", err
 	}
-	b64XML := base64.StdEncoding.EncodeToString([]byte(signed))
-	return b64XML, nil
+	return base64.StdEncoding.EncodeToString([]byte(signed)), nil
 }
 
-func (ar *AuthnRequest) CompressedEncodedSignedString(privateKeyPath string) (string, error) {
-	signed, err := ar.SignedString(privateKeyPath)
+// CompressedEncodedSignedString returns the request compressed, base64 encoded, and signed
+func (ar *AuthnRequest) CompressedEncodedSignedString(xPath string, privateKey *rsa.PrivateKey, publicCert *x509.Certificate) (string, error) {
+	signed, err := ar.SignedString(xPath, privateKey, publicCert)
 	if err != nil {
 		return "", err
 	}
 	compressed := util.Compress([]byte(signed))
-	b64XML := base64.StdEncoding.EncodeToString(compressed)
-	return b64XML, nil
+	return base64.StdEncoding.EncodeToString(compressed), nil
 }
 
+// EncodedString returns the request base64 encoded
 func (ar *AuthnRequest) EncodedString() (string, error) {
-	saml, err := ar.String()
+	s, err := ar.String()
 	if err != nil {
 		return "", err
 	}
-	b64XML := base64.StdEncoding.EncodeToString([]byte(saml))
-	return b64XML, nil
+	return base64.StdEncoding.EncodeToString([]byte(s)), nil
 }
 
+// CompressedEncodedString returns the request compressed and base64 encoded
 func (ar *AuthnRequest) CompressedEncodedString() (string, error) {
-	saml, err := ar.String()
+	s, err := ar.String()
 	if err != nil {
 		return "", err
 	}
-	compressed := util.Compress([]byte(saml))
-	b64XML := base64.StdEncoding.EncodeToString(compressed)
-	return b64XML, nil
+	compressed := util.Compress([]byte(s))
+	return base64.StdEncoding.EncodeToString(compressed), nil
+}
+
+// VerifySignature verifies the signature
+func (ar *AuthnRequest) VerifySignature(xPath string, certs []*x509.Certificate) error {
+	return xmldsig.VerifySignature(ar.originalString, xPath, certs)
 }

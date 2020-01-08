@@ -1,81 +1,94 @@
 package saml_test
 
 import (
-	"encoding/base64"
+	"crypto/rsa"
+	"crypto/x509"
 	"testing"
 
 	"github.com/janrain/go-saml"
-	"github.com/janrain/go-saml/xmlsec"
+	"github.com/janrain/go-saml/util"
 
 	"github.com/stretchr/testify/suite"
 )
 
-const xmldoc = `<samlp:Response Destination="http://localhost:8080/callback" ID="abc-response" InResponseTo="xyz" IssueInstant="2000-01-23T00:00:00.000Z" Version="2.0" xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol">
-  <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
-    <SignedInfo>
-      <CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
-      <SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"/>
-      <Reference URI="#abc-response">
-        <Transforms>
-          <Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
-        </Transforms>
-        <DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"/>
-        <DigestValue/>
-      </Reference>
-    </SignedInfo>
-    <SignatureValue/>
-    <KeyInfo>
-      <X509Data/>
-    </KeyInfo>
-  </Signature>
-  <samlp:Status>
-    <samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success"/>
-  </samlp:Status>
-  <saml:Assertion ID="abc-assertion" IssueInstant="2000-01-23T00:00:00.000Z" Version="2.0" xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion">
-    <saml:Subject>
-      <saml:NameID Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified">myuserid</saml:NameID>
-      <saml:SubjectConfirmation Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
-        <saml:SubjectConfirmationData InResponseTo="xyz" NotOnOrAfter="2050-01-23T00:00:00.000Z" Recipient="http://localhost:8080/callback"/>
-      </saml:SubjectConfirmation>
-    </saml:Subject>
-  </saml:Assertion>
-</samlp:Response>`
+const (
+	respIssuer      = "http://localhost"
+	respDestination = "http://sp.test/acs"
+	respAudience    = "http://sp.test"
+	respSubject     = "someidentifier"
+	respAttrName    = "Email"
+	respAttrValue   = "test@test.test"
+	respXPath       = "/Response/Assertion"
+)
 
-type ResponseTestSuite struct {
+type ResponseSuite struct {
 	suite.Suite
-	sp *saml.ServiceProvider
+	privateKey *rsa.PrivateKey
+	publicCert *x509.Certificate
+	resp       *saml.Response
 }
 
-func (s *ResponseTestSuite) SetupTest() {
-	s.sp = &saml.ServiceProvider{
-		PublicCertPath:              "./xmlsec/testdata/default.crt",
-		PrivateKeyPath:              "./xmlsec/testdata/default.key",
-		IDPSSOURL:                   "http://www.onelogin.net",
-		IDPPublicCertPath:           "./xmlsec/testdata/default.crt",
-		IssuerURL:                   "http://localhost:8000",
-		AssertionConsumerServiceURL: "http://localhost:8080/callback",
-		SignRequest:                 true,
+func (s *ResponseSuite) SetupSuite() {
+	s.privateKey, s.publicCert = util.TestKeyPair()
+	s.resp = saml.NewResponse(respIssuer, respAudience, respDestination, respSubject)
+	s.resp.AddAttribute(respAttrName, respAttrValue)
+}
+
+func (s *ResponseSuite) ValidateResponse(resp *saml.Response, signed bool) {
+	s.Equal(respIssuer, resp.Issuer.Value)
+	s.Equal(respIssuer, resp.Assertion.Issuer.Value)
+	s.Equal(respDestination, resp.Destination)
+	s.Equal(respDestination, resp.Assertion.Subject.SubjectConfirmation.SubjectConfirmationData.Recipient)
+	s.Equal(respAudience, resp.Assertion.Conditions.AudienceRestriction.Audience.Value)
+	s.Equal(respAttrName, resp.Assertion.AttributeStatement.Attributes[0].Name)
+	s.Equal(respAttrValue, resp.Assertion.AttributeStatement.Attributes[0].AttributeValues[0].Value)
+
+	if signed {
+		err := resp.VerifySignature(respXPath, []*x509.Certificate{s.publicCert})
+		s.NoError(err)
 	}
-	err := s.sp.Init()
-	if err != nil {
-		panic(err)
-	}
 }
 
-func (s *ResponseTestSuite) TestParseAndValidateResponse() {
-	signedXML, err := xmlsec.Sign(xmldoc, s.sp.PrivateKeyPath, saml.ResponseXMLID)
+func (s *ResponseSuite) TestSignedString() {
+	x, err := s.resp.SignedString(respXPath, s.privateKey, s.publicCert)
 	s.NoError(err)
 
-	encodedXML := base64.StdEncoding.EncodeToString([]byte(signedXML))
-	resp, err := saml.ParseResponse(encodedXML)
+	parsedResp, err := saml.ParseResponse(x)
 	s.NoError(err)
-	s.Equal(s.sp.AssertionConsumerServiceURL, resp.Destination)
-	s.Equal("myuserid", resp.Assertion.Subject.NameID.Value)
 
-	err = s.sp.ValidateResponse(resp)
-	s.NoError(err)
+	s.ValidateResponse(parsedResp, true)
 }
 
-func TestResponse(t *testing.T) {
-	suite.Run(t, &ResponseTestSuite{})
+func (s *ResponseSuite) TestEncodedString() {
+	x, err := s.resp.EncodedString()
+	s.NoError(err)
+
+	parsedResp, err := saml.ParseEncodedResponse(x)
+	s.NoError(err)
+
+	s.ValidateResponse(parsedResp, false)
+}
+
+func (s *ResponseSuite) TestCompressedEncodedString() {
+	x, err := s.resp.CompressedEncodedString()
+	s.NoError(err)
+
+	parsedResp, err := saml.ParseEncodedResponse(x)
+	s.NoError(err)
+
+	s.ValidateResponse(parsedResp, false)
+}
+
+func (s *ResponseSuite) TestCompressedEncodedSignedString() {
+	x, err := s.resp.CompressedEncodedSignedString(respXPath, s.privateKey, s.publicCert)
+	s.NoError(err)
+
+	parsedResp, err := saml.ParseEncodedResponse(x)
+	s.NoError(err)
+
+	s.ValidateResponse(parsedResp, true)
+}
+
+func TestResponseSuite(t *testing.T) {
+	suite.Run(t, &ResponseSuite{})
 }
