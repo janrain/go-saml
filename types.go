@@ -185,27 +185,28 @@ type Response struct {
 	IssueInstant string `xml:"IssueInstant,attr"`
 	InResponseTo string `xml:"InResponseTo,attr,omitempty"`
 
-	Assertion Assertion  `xml:"Assertion"`
-	Signature *Signature `xml:"Signature,omitempty"`
 	Issuer    Issuer     `xml:"Issuer"`
 	Status    Status     `xml:"Status"`
+	Assertion Assertion  `xml:"Assertion"`
+	Signature *Signature `xml:"Signature,omitempty"`
 
 	originalString string
 }
 
 type Assertion struct {
-	XMLName            xml.Name
-	ID                 string `xml:"ID,attr"`
-	Version            string `xml:"Version,attr"`
-	XS                 string `xml:"xmlns:xs,attr"`
-	XSI                string `xml:"xmlns:xsi,attr"`
-	SAML               string `xml:"xmlns:saml,attr"`
-	IssueInstant       string `xml:"IssueInstant,attr"`
-	Issuer             Issuer `xml:"Issuer"`
+	XMLName      xml.Name
+	ID           string `xml:"ID,attr"`
+	Version      string `xml:"Version,attr"`
+	XS           string `xml:"xmlns:xs,attr"`
+	XSI          string `xml:"xmlns:xsi,attr"`
+	SAML         string `xml:"xmlns:saml,attr"`
+	IssueInstant string `xml:"IssueInstant,attr"`
+
+	Issuer             Issuer     `xml:"Issuer"`
+	Signature          *Signature `xml:"Signature,omitempty"`
 	Subject            Subject
 	Conditions         Conditions
 	AttributeStatement AttributeStatement
-	Signature          *Signature `xml:"Signature,omitempty"`
 }
 
 type Conditions struct {

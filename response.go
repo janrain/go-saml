@@ -43,8 +43,8 @@ func ParseEncodedResponse(encodedXML string) (*Response, error) {
 
 // NewResponse creates a new Response
 // issuer should be the IDP URL
-// destination should be the SP ACS URL
 // audience should be the SP entityID
+// destination should be the SP ACS URL
 // subject should be the identifier of the assertion subject
 func NewResponse(issuer, audience, destination, subject string) *Response {
 	now := time.Now().UTC()
