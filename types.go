@@ -1,281 +1,461 @@
 package saml
 
-import "encoding/xml"
+import (
+	"encoding/xml"
+	"strconv"
 
+	"github.com/beevik/etree"
+)
+
+// AuthnRequest represents a SAML AuthnRequest
 type AuthnRequest struct {
-	XMLName                        xml.Name
-	SAMLP                          string                `xml:"xmlns:samlp,attr"`
-	SAML                           string                `xml:"xmlns:saml,attr"`
-	ID                             string                `xml:"ID,attr"`
-	Version                        string                `xml:"Version,attr"`
-	ProtocolBinding                string                `xml:"ProtocolBinding,attr"`
-	AssertionConsumerServiceURL    string                `xml:"AssertionConsumerServiceURL,attr"`
-	Destination                    string                `xml:"Destination,attr"`
-	IssueInstant                   string                `xml:"IssueInstant,attr"`
-	AssertionConsumerServiceIndex  int                   `xml:"AssertionConsumerServiceIndex,attr,omitempty"`
-	AttributeConsumingServiceIndex int                   `xml:"AttributeConsumingServiceIndex,attr"`
-	Issuer                         Issuer                `xml:"Issuer"`
-	NameIDPolicy                   NameIDPolicy          `xml:"NameIDPolicy"`
-	RequestedAuthnContext          RequestedAuthnContext `xml:"RequestedAuthnContext"`
-	Signature                      *Signature            `xml:"Signature,omitempty"`
+	XMLName xml.Name `xml:"urn:oasis:names:tc:SAML:2.0:protocol AuthnRequest"`
+
+	ID                             string `xml:",attr"`
+	Version                        string `xml:",attr"`
+	IssueInstant                   string `xml:",attr"`
+	Destination                    string `xml:",attr"`
+	Consent                        string `xml:",attr"`
+	AssertionConsumerServiceURL    string `xml:",attr"`
+	AssertionConsumerServiceIndex  string `xml:",attr"`
+	AttributeConsumingServiceIndex string `xml:",attr"`
+	ProtocolBinding                string `xml:",attr"`
+
+	Issuer                *Issuer
+	Signature             *etree.Element
+	NameIDPolicy          *NameIDPolicy `xml:"urn:oasis:names:tc:SAML:2.0:protocol NameIDPolicy"`
+	RequestedAuthnContext *RequestedAuthnContext
 
 	originalString string
 }
 
+// Element returns AuthnRequest as etree.Element
+func (r *AuthnRequest) Element() *etree.Element {
+	e := etree.NewElement("samlp:AuthnRequest")
+	e.CreateAttr("xmlns:saml", "urn:oasis:names:tc:SAML:2.0:assertion")
+	e.CreateAttr("xmlns:samlp", "urn:oasis:names:tc:SAML:2.0:protocol")
+	e.CreateAttr("ID", r.ID)
+	e.CreateAttr("Version", r.Version)
+	e.CreateAttr("IssueInstant", r.IssueInstant)
+	if r.Destination != "" {
+		e.CreateAttr("Destination", r.Destination)
+	}
+	if r.Consent != "" {
+		e.CreateAttr("Consent", r.Consent)
+	}
+	if r.AssertionConsumerServiceURL != "" {
+		e.CreateAttr("AssertionConsumerServiceURL", r.AssertionConsumerServiceURL)
+	}
+	if r.AssertionConsumerServiceIndex != "" {
+		e.CreateAttr("AssertionConsumerServiceIndex", r.AssertionConsumerServiceIndex)
+	}
+	if r.ProtocolBinding != "" {
+		e.CreateAttr("ProtocolBinding", r.ProtocolBinding)
+	}
+	if r.AttributeConsumingServiceIndex != "" {
+		e.CreateAttr("AttributeConsumingServiceIndex", r.AttributeConsumingServiceIndex)
+	}
+	if r.Issuer != nil {
+		e.AddChild(r.Issuer.Element())
+	}
+	if r.Signature != nil {
+		e.AddChild(r.Signature)
+	}
+	if r.NameIDPolicy != nil {
+		e.AddChild(r.NameIDPolicy.Element())
+	}
+	if r.RequestedAuthnContext != nil {
+		e.AddChild(r.RequestedAuthnContext.Element())
+	}
+	return e
+}
+
+// Issuer represents a SAML Issuer
 type Issuer struct {
-	XMLName xml.Name
-	SAML    string `xml:"xmlns:saml,attr,omitempty"`
-	Value   string `xml:",innerxml"`
+	XMLName xml.Name `xml:"urn:oasis:names:tc:SAML:2.0:assertion Issuer"`
+
+	Format *string `xml:",attr"`
+	Value  string  `xml:",chardata"`
 }
 
+// Element returns Issuer as etree.Element
+func (r *Issuer) Element() *etree.Element {
+	e := etree.NewElement("saml:Issuer")
+	if r.Format != nil && *r.Format != "" {
+		e.CreateAttr("Format", *r.Format)
+	}
+	e.SetText(r.Value)
+	return e
+}
+
+// NameIDPolicy represents a SAML NameIDPolicy
 type NameIDPolicy struct {
-	XMLName     xml.Name
-	AllowCreate bool   `xml:"AllowCreate,attr"`
-	Format      string `xml:"Format,attr"`
+	XMLName xml.Name `xml:"urn:oasis:names:tc:SAML:2.0:protocol NameIDPolicy"`
+
+	AllowCreate *bool   `xml:",attr"`
+	Format      *string `xml:",attr"`
 }
 
+// Element returns NameIDPolicy as etree.Element
+func (r *NameIDPolicy) Element() *etree.Element {
+	e := etree.NewElement("samlp:NameIDPolicy")
+	if r.AllowCreate != nil {
+		e.CreateAttr("AllowCreate", strconv.FormatBool(*r.AllowCreate))
+	}
+	if r.Format != nil && *r.Format != "" {
+		e.CreateAttr("Format", *r.Format)
+	}
+	return e
+}
+
+// RequestedAuthnContext represents a SAML RequestedAuthnContext
 type RequestedAuthnContext struct {
-	XMLName              xml.Name
-	SAMLP                string               `xml:"xmlns:samlp,attr"`
-	Comparison           string               `xml:"Comparison,attr"`
-	AuthnContextClassRef AuthnContextClassRef `xml:"AuthnContextClassRef"`
+	XMLName xml.Name `xml:"urn:oasis:names:tc:SAML:2.0:protocol RequestedAuthnContext"`
+
+	Comparison           string `xml:",attr"`
+	AuthnContextClassRef *AuthnContextClassRef
 }
 
+// Element returns RequestedAuthnContext as etree.Element
+func (r *RequestedAuthnContext) Element() *etree.Element {
+	e := etree.NewElement("samlp:RequestedAuthnContext")
+	if r.Comparison != "" {
+		e.CreateAttr("Comparison", r.Comparison)
+	}
+	if r.AuthnContextClassRef != nil {
+		e.AddChild(r.AuthnContextClassRef.Element())
+	}
+	return e
+}
+
+// AuthnContextClassRef represents a SAML AuthnContextClassRef
 type AuthnContextClassRef struct {
-	XMLName   xml.Name
-	SAML      string `xml:"xmlns:saml,attr"`
-	Transport string `xml:",innerxml"`
+	XMLName xml.Name `xml:"urn:oasis:names:tc:SAML:2.0:assertion AuthnContextClassRef"`
+
+	Transport string `xml:",chardata"`
 }
 
-type Signature struct {
-	XMLName        xml.Name
-	ID             string         `xml:"ID,attr"`
-	SignedInfo     SignedInfo     `xml:"SignedInfo"`
-	SignatureValue SignatureValue `xml:"SignatureValue"`
-	KeyInfo        KeyInfo        `xml:"KeyInfo"`
+// Element returns AuthnContextClassRef as etree.Element
+func (r *AuthnContextClassRef) Element() *etree.Element {
+	e := etree.NewElement("saml:AuthnContextClassRef")
+	e.SetText(r.Transport)
+	return e
 }
 
-type SignedInfo struct {
-	XMLName                xml.Name
-	CanonicalizationMethod CanonicalizationMethod
-	SignatureMethod        SignatureMethod
-	SamlsigReference       SamlsigReference
-}
-
-type SignatureValue struct {
-	XMLName xml.Name
-	Value   string `xml:",innerxml"`
-}
-
-type KeyInfo struct {
-	XMLName  xml.Name
-	X509Data X509Data `xml:",innerxml"`
-}
-
-type CanonicalizationMethod struct {
-	XMLName   xml.Name
-	Algorithm string `xml:"Algorithm,attr"`
-}
-
-type SignatureMethod struct {
-	XMLName   xml.Name
-	Algorithm string `xml:"Algorithm,attr"`
-}
-
-type SamlsigReference struct {
-	XMLName      xml.Name
-	URI          string       `xml:"URI,attr"`
-	Transforms   Transforms   `xml:",innerxml"`
-	DigestMethod DigestMethod `xml:",innerxml"`
-	DigestValue  DigestValue  `xml:",innerxml"`
-}
-
-type X509Data struct {
-	XMLName         xml.Name
-	X509Certificate X509Certificate `xml:",innerxml"`
-}
-
-type Transforms struct {
-	XMLName   xml.Name
-	Transform Transform
-}
-
-type DigestMethod struct {
-	XMLName   xml.Name
-	Algorithm string `xml:"Algorithm,attr"`
-}
-
-type DigestValue struct {
-	XMLName xml.Name
-}
-
-type X509Certificate struct {
-	XMLName xml.Name
-	Cert    string `xml:",innerxml"`
-}
-
-type Transform struct {
-	XMLName   xml.Name
-	Algorithm string `xml:"Algorithm,attr"`
-}
-
-type EntityDescriptor struct {
-	XMLName  xml.Name
-	DS       string `xml:"xmlns:ds,attr"`
-	XMLNS    string `xml:"xmlns,attr"`
-	MD       string `xml:"xmlns:md,attr"`
-	EntityID string `xml:"entityID,attr"`
-
-	Extensions      Extensions      `xml:"Extensions"`
-	SPSSODescriptor SPSSODescriptor `xml:"SPSSODescriptor"`
-}
-
-type Extensions struct {
-	XMLName xml.Name
-	Alg     string `xml:"xmlns:alg,attr"`
-	MDAttr  string `xml:"xmlns:mdattr,attr"`
-	MDRPI   string `xml:"xmlns:mdrpi,attr"`
-
-	EntityAttributes string `xml:"EntityAttributes"`
-}
-
-type SPSSODescriptor struct {
-	XMLName                    xml.Name
-	ProtocolSupportEnumeration string `xml:"protocolSupportEnumeration,attr"`
-	SigningKeyDescriptor       KeyDescriptor
-	EncryptionKeyDescriptor    KeyDescriptor
-	// SingleLogoutService        SingleLogoutService `xml:"SingleLogoutService"`
-	AssertionConsumerServices []AssertionConsumerService
-}
-
-type EntityAttributes struct {
-	XMLName xml.Name
-	SAML    string `xml:"xmlns:saml,attr"`
-
-	EntityAttributes []Attribute `xml:"Attribute"` // should be array??
-}
-
-type SPSSODescriptors struct {
-}
-
-type KeyDescriptor struct {
-	XMLName xml.Name
-	Use     string  `xml:"use,attr"`
-	KeyInfo KeyInfo `xml:"KeyInfo"`
-}
-
-type SingleLogoutService struct {
-	Binding  string `xml:"Binding,attr"`
-	Location string `xml:"Location,attr"`
-}
-
-type AssertionConsumerService struct {
-	XMLName  xml.Name
-	Binding  string `xml:"Binding,attr"`
-	Location string `xml:"Location,attr"`
-	Index    string `xml:"index,attr"`
-}
-
+// Response represents a SAML Response
 type Response struct {
-	XMLName      xml.Name
-	SAMLP        string `xml:"xmlns:samlp,attr"`
-	Destination  string `xml:"Destination,attr"`
-	ID           string `xml:"ID,attr"`
-	Version      string `xml:"Version,attr"`
-	IssueInstant string `xml:"IssueInstant,attr"`
-	InResponseTo string `xml:"InResponseTo,attr,omitempty"`
+	XMLName xml.Name `xml:"urn:oasis:names:tc:SAML:2.0:protocol Response"`
 
-	Issuer    Issuer     `xml:"Issuer"`
-	Status    Status     `xml:"Status"`
-	Assertion Assertion  `xml:"Assertion"`
-	Signature *Signature `xml:"Signature,omitempty"`
+	ID           string `xml:",attr"`
+	Version      string `xml:",attr"`
+	IssueInstant string `xml:",attr"`
+	InResponseTo string `xml:",attr"`
+	Destination  string `xml:",attr"`
+	Consent      string `xml:",attr"`
+
+	Issuer    *Issuer `xml:"urn:oasis:names:tc:SAML:2.0:assertion Issuer"`
+	Signature *etree.Element
+	Status    Status     `xml:"urn:oasis:names:tc:SAML:2.0:protocol Status"`
+	Assertion *Assertion `xml:"urn:oasis:names:tc:SAML:2.0:assertion Assertion"`
 
 	originalString string
 }
 
-type Assertion struct {
-	XMLName      xml.Name
-	ID           string `xml:"ID,attr"`
-	Version      string `xml:"Version,attr"`
-	XS           string `xml:"xmlns:xs,attr"`
-	XSI          string `xml:"xmlns:xsi,attr"`
-	SAML         string `xml:"xmlns:saml,attr"`
-	IssueInstant string `xml:"IssueInstant,attr"`
-
-	Issuer             Issuer     `xml:"Issuer"`
-	Signature          *Signature `xml:"Signature,omitempty"`
-	Subject            Subject
-	Conditions         Conditions
-	AttributeStatement AttributeStatement
+// Element returns Response as etree.Element
+func (r *Response) Element() *etree.Element {
+	e := etree.NewElement("samlp:Response")
+	e.CreateAttr("xmlns:saml", "urn:oasis:names:tc:SAML:2.0:assertion")
+	e.CreateAttr("xmlns:samlp", "urn:oasis:names:tc:SAML:2.0:protocol")
+	// Note: This namespace is not used by any element or attribute name, but
+	// is required so that the AttributeValue type element can have a value like
+	// "xs:string". If we don't declare it here, then it will be stripped by the
+	// cannonicalizer. This could be avoided by providing a prefix list to the
+	// cannonicalizer, but prefix lists do not appear to be implemented correctly
+	// in some libraries, so the safest action is to always produce XML that is
+	// (a) in canonical form and (b) does not require prefix lists.
+	e.CreateAttr("xmlns:xs", "http://www.w3.org/2001/XMLSchema")
+	e.CreateAttr("ID", r.ID)
+	e.CreateAttr("Version", r.Version)
+	e.CreateAttr("IssueInstant", r.IssueInstant)
+	if r.InResponseTo != "" {
+		e.CreateAttr("InResponseTo", r.InResponseTo)
+	}
+	if r.Destination != "" {
+		e.CreateAttr("Destination", r.Destination)
+	}
+	if r.Consent != "" {
+		e.CreateAttr("Consent", r.Consent)
+	}
+	if r.Issuer != nil {
+		e.AddChild(r.Issuer.Element())
+	}
+	if r.Signature != nil {
+		e.AddChild(r.Signature)
+	}
+	e.AddChild(r.Status.Element())
+	if r.Assertion != nil {
+		e.AddChild(r.Assertion.Element())
+	}
+	return e
 }
 
-type Conditions struct {
-	XMLName             xml.Name
-	NotBefore           string `xml:",attr"`
-	NotOnOrAfter        string `xml:",attr"`
-	AudienceRestriction AudienceRestriction
-}
-
-type AudienceRestriction struct {
-	XMLName  xml.Name
-	Audience Audience
-}
-
-type Audience struct {
-	XMLName xml.Name
-	Value   string `xml:",innerxml"`
-}
-
-type Subject struct {
-	XMLName             xml.Name
-	NameID              NameID
-	SubjectConfirmation SubjectConfirmation
-}
-
-type SubjectConfirmation struct {
-	XMLName                 xml.Name
-	Method                  string `xml:",attr"`
-	SubjectConfirmationData SubjectConfirmationData
-}
-
+// Status represents a SAML Status
 type Status struct {
-	XMLName    xml.Name
+	XMLName xml.Name `xml:"urn:oasis:names:tc:SAML:2.0:protocol Status"`
+
 	StatusCode StatusCode `xml:"StatusCode"`
 }
 
+// Element returns Status as etree.Element
+func (r *Status) Element() *etree.Element {
+	e := etree.NewElement("samlp:Status")
+	e.AddChild(r.StatusCode.Element())
+	return e
+}
+
+// StatusCode represents a SAML StatusCode
+type StatusCode struct {
+	XMLName xml.Name `xml:"urn:oasis:names:tc:SAML:2.0:protocol StatusCode"`
+	Value   string   `xml:",attr"`
+}
+
+// Element returns StatusCode as etree.Element
+func (r *StatusCode) Element() *etree.Element {
+	e := etree.NewElement("samlp:StatusCode")
+	e.CreateAttr("Value", r.Value)
+	return e
+}
+
+// Assertion represents a SAML Assertion
+type Assertion struct {
+	XMLName xml.Name `xml:"urn:oasis:names:tc:SAML:2.0:assertion Assertion"`
+
+	ID           string `xml:",attr"`
+	Version      string `xml:",attr"`
+	IssueInstant string `xml:",attr"`
+
+	Issuer             Issuer `xml:"urn:oasis:names:tc:SAML:2.0:assertion Issuer"`
+	Signature          *etree.Element
+	Subject            *Subject
+	Conditions         *Conditions
+	AttributeStatement *AttributeStatement
+}
+
+// Element returns Assertion as etree.Element
+func (r *Assertion) Element() *etree.Element {
+	e := etree.NewElement("saml:Assertion")
+	e.CreateAttr("xmlns:saml", "urn:oasis:names:tc:SAML:2.0:assertion")
+	e.CreateAttr("ID", r.ID)
+	e.CreateAttr("Version", r.Version)
+	e.CreateAttr("IssueInstant", r.IssueInstant)
+	e.AddChild(r.Issuer.Element())
+	if r.Signature != nil {
+		e.AddChild(r.Signature)
+	}
+	if r.Subject != nil {
+		e.AddChild(r.Subject.Element())
+	}
+	if r.Conditions != nil {
+		e.AddChild(r.Conditions.Element())
+	}
+	if r.AttributeStatement != nil {
+		e.AddChild(r.AttributeStatement.Element())
+	}
+	return e
+}
+
+// Conditions represents a SAML Conditions
+type Conditions struct {
+	NotBefore    string `xml:",attr"`
+	NotOnOrAfter string `xml:",attr"`
+
+	AudienceRestriction *AudienceRestriction
+}
+
+// Element returns Conditions as etree.Element
+func (r *Conditions) Element() *etree.Element {
+	e := etree.NewElement("saml:Conditions")
+	if r.NotBefore != "" {
+		e.CreateAttr("NotBefore", r.NotBefore)
+	}
+	if r.NotOnOrAfter != "" {
+		e.CreateAttr("NotOnOrAfter", r.NotOnOrAfter)
+	}
+	if r.AudienceRestriction != nil {
+		e.AddChild(r.AudienceRestriction.Element())
+	}
+	return e
+}
+
+// AudienceRestriction represents a SAML AudienceRestriction
+type AudienceRestriction struct {
+	Audience Audience
+}
+
+// Element returns AudienceRestriction as etree.Element
+func (r *AudienceRestriction) Element() *etree.Element {
+	e := etree.NewElement("saml:AudienceRestriction")
+	e.AddChild(r.Audience.Element())
+	return e
+}
+
+// Audience represents a SAML Audience
+type Audience struct {
+	Value string `xml:",chardata"`
+}
+
+// Element returns Audience as etree.Element
+func (r *Audience) Element() *etree.Element {
+	e := etree.NewElement("saml:Audience")
+	e.SetText(r.Value)
+	return e
+}
+
+// Subject represents a SAML Subject
+type Subject struct {
+	XMLName xml.Name `xml:"urn:oasis:names:tc:SAML:2.0:assertion Subject"`
+
+	NameID              *NameID
+	SubjectConfirmation *SubjectConfirmation
+}
+
+// Element returns Subject as etree.Element
+func (r *Subject) Element() *etree.Element {
+	e := etree.NewElement("saml:Subject")
+	if r.NameID != nil {
+		e.AddChild(r.NameID.Element())
+	}
+	if r.SubjectConfirmation != nil {
+		e.AddChild(r.SubjectConfirmation.Element())
+	}
+	return e
+}
+
+// SubjectConfirmation represents a SAML SubjectConfirmation
+type SubjectConfirmation struct {
+	Method string `xml:",attr"`
+
+	NameID                  *NameID
+	SubjectConfirmationData *SubjectConfirmationData
+}
+
+// Element returns SubjectConfirmation as etree.Element
+func (r *SubjectConfirmation) Element() *etree.Element {
+	e := etree.NewElement("saml:SubjectConfirmation")
+	e.CreateAttr("Method", r.Method)
+	if r.NameID != nil {
+		e.AddChild(r.NameID.Element())
+	}
+	if r.SubjectConfirmationData != nil {
+		e.AddChild(r.SubjectConfirmationData.Element())
+	}
+	return e
+}
+
+// SubjectConfirmationData represents a SAML SubjectConfirmationData
 type SubjectConfirmationData struct {
-	XMLName      xml.Name
-	InResponseTo string `xml:",attr,omitempty"`
+	InResponseTo string `xml:",attr"`
+	NotBefore    string `xml:",attr"`
 	NotOnOrAfter string `xml:",attr"`
 	Recipient    string `xml:",attr"`
 }
 
+// Element returns SubjectConfirmationData as etree.Element
+func (r *SubjectConfirmationData) Element() *etree.Element {
+	e := etree.NewElement("saml:SubjectConfirmationData")
+	if r.InResponseTo != "" {
+		e.CreateAttr("InResponseTo", r.InResponseTo)
+	}
+	if r.NotBefore != "" {
+		e.CreateAttr("NotBefore", r.NotBefore)
+	}
+	if r.NotOnOrAfter != "" {
+		e.CreateAttr("NotOnOrAfter", r.NotOnOrAfter)
+	}
+	if r.Recipient != "" {
+		e.CreateAttr("Recipient", r.Recipient)
+	}
+	return e
+}
+
+// NameID represents a SAML NameID
 type NameID struct {
-	XMLName xml.Name
-	Format  string `xml:",attr"`
-	Value   string `xml:",innerxml"`
+	NameQualifier string `xml:",attr"`
+	Format        string `xml:",attr"`
+	Value         string `xml:",chardata"`
 }
 
-type StatusCode struct {
-	XMLName xml.Name
-	Value   string `xml:",attr"`
+// Element returns NameID as etree.Element
+func (r *NameID) Element() *etree.Element {
+	e := etree.NewElement("saml:NameID")
+	if r.NameQualifier != "" {
+		e.CreateAttr("NameQualifier", r.NameQualifier)
+	}
+	if r.Format != "" {
+		e.CreateAttr("Format", r.Format)
+	}
+	if r.Value != "" {
+		e.SetText(r.Value)
+	}
+	return e
 }
 
-type AttributeValue struct {
-	XMLName xml.Name
-	Type    string `xml:"xsi:type,attr"`
-	Value   string `xml:",innerxml"`
+// AttributeStatement represents a SAML AttributeStatement
+type AttributeStatement struct {
+	Attributes []Attribute `xml:"Attribute"`
 }
 
+// Element returns AttributeStatement as etree.Element
+func (r *AttributeStatement) Element() *etree.Element {
+	e := etree.NewElement("saml:AttributeStatement")
+	for _, v := range r.Attributes {
+		e.AddChild(v.Element())
+	}
+	return e
+}
+
+// Attribute represents a SAML Attribute
 type Attribute struct {
-	XMLName         xml.Name
-	Name            string           `xml:",attr"`
 	FriendlyName    string           `xml:",attr"`
+	Name            string           `xml:",attr"`
 	NameFormat      string           `xml:",attr"`
 	AttributeValues []AttributeValue `xml:"AttributeValue"`
 }
 
-type AttributeStatement struct {
-	XMLName    xml.Name
-	Attributes []Attribute `xml:"Attribute"`
+// Element returns Attribute as etree.Element
+func (r *Attribute) Element() *etree.Element {
+	e := etree.NewElement("saml:Attribute")
+	if r.FriendlyName != "" {
+		e.CreateAttr("FriendlyName", r.FriendlyName)
+	}
+	if r.Name != "" {
+		e.CreateAttr("Name", r.Name)
+	}
+	if r.NameFormat != "" {
+		e.CreateAttr("NameFormat", r.NameFormat)
+	}
+	for _, v := range r.AttributeValues {
+		e.AddChild(v.Element())
+	}
+	return e
+}
+
+// AttributeValue represents a SAML AttributeValue
+type AttributeValue struct {
+	Type   string `xml:"http://www.w3.org/2001/XMLSchema-instance type,attr"`
+	Value  string `xml:",chardata"`
+	NameID *NameID
+}
+
+// Element returns AttributeValue as etree.Element
+func (r *AttributeValue) Element() *etree.Element {
+	e := etree.NewElement("saml:AttributeValue")
+	if r.Type != "" {
+		e.CreateAttr("Type", r.Type)
+	}
+	if r.NameID != nil {
+		e.AddChild(r.NameID.Element())
+	}
+	e.SetText(r.Value)
+	return e
 }

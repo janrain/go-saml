@@ -6,19 +6,18 @@ import (
 	"testing"
 
 	"github.com/janrain/go-saml"
-	"github.com/janrain/go-saml/util"
+	"github.com/janrain/go-saml/testutil"
 
 	"github.com/stretchr/testify/suite"
 )
 
 const (
-	respIssuer      = "http://localhost"
-	respDestination = "http://sp.test/acs"
+	respIssuer      = "http://idp.test/auth"
+	respDestination = "http://sp.test/callback"
 	respAudience    = "http://sp.test"
 	respSubject     = "someidentifier"
 	respAttrName    = "Email"
 	respAttrValue   = "test@test.test"
-	respXPath       = "/Response/Assertion"
 )
 
 type ResponseSuite struct {
@@ -29,7 +28,10 @@ type ResponseSuite struct {
 }
 
 func (s *ResponseSuite) SetupSuite() {
-	s.privateKey, s.publicCert = util.TestKeyPair()
+	s.privateKey, s.publicCert = testutil.TestKeyPair()
+}
+
+func (s *ResponseSuite) SetupTest() {
 	s.resp = saml.NewResponse(respIssuer, respAudience, respDestination, respSubject)
 	s.resp.AddAttribute(respAttrName, respAttrValue)
 }
@@ -44,49 +46,79 @@ func (s *ResponseSuite) ValidateResponse(resp *saml.Response, signed bool) {
 	s.Equal(respAttrValue, resp.Assertion.AttributeStatement.Attributes[0].AttributeValues[0].Value)
 
 	if signed {
-		err := resp.VerifySignature(respXPath, []*x509.Certificate{s.publicCert})
+		err := resp.ValidateSignature([]*x509.Certificate{s.publicCert})
 		s.NoError(err)
 	}
 }
 
-func (s *ResponseSuite) TestSignedString() {
-	x, err := s.resp.SignedString(respXPath, s.privateKey, s.publicCert)
+func (s *ResponseSuite) TestSignedAssertion() {
+	err := s.resp.SignAssertion(s.privateKey, s.publicCert)
+	s.NoError(err)
+	s.NotNil(s.resp.Assertion.Signature)
+
+	s.ValidateResponse(s.resp, true)
+
+	out, err := s.resp.String()
 	s.NoError(err)
 
-	parsedResp, err := saml.ParseResponse(x)
+	parsedResp, err := saml.ParseResponse(out)
+	s.NoError(err)
+
+	s.ValidateResponse(parsedResp, true)
+}
+
+func (s *ResponseSuite) TestSignedResponse() {
+	err := s.resp.SignResponse(s.privateKey, s.publicCert)
+	s.NoError(err)
+	s.NotNil(s.resp.Signature)
+
+	s.ValidateResponse(s.resp, true)
+
+	out, err := s.resp.String()
+	s.NoError(err)
+
+	parsedResp, err := saml.ParseResponse(out)
 	s.NoError(err)
 
 	s.ValidateResponse(parsedResp, true)
 }
 
-func (s *ResponseSuite) TestEncodedString() {
-	x, err := s.resp.EncodedString()
+func (s *ResponseSuite) TestSignedResponseAndAssertion() {
+	err := s.resp.SignAssertion(s.privateKey, s.publicCert)
 	s.NoError(err)
 
-	parsedResp, err := saml.ParseEncodedResponse(x)
+	err = s.resp.SignResponse(s.privateKey, s.publicCert)
 	s.NoError(err)
 
-	s.ValidateResponse(parsedResp, false)
-}
+	s.ValidateResponse(s.resp, true)
 
-func (s *ResponseSuite) TestCompressedEncodedString() {
-	x, err := s.resp.CompressedEncodedString()
+	out, err := s.resp.String()
 	s.NoError(err)
 
-	parsedResp, err := saml.ParseEncodedResponse(x)
-	s.NoError(err)
-
-	s.ValidateResponse(parsedResp, false)
-}
-
-func (s *ResponseSuite) TestCompressedEncodedSignedString() {
-	x, err := s.resp.CompressedEncodedSignedString(respXPath, s.privateKey, s.publicCert)
-	s.NoError(err)
-
-	parsedResp, err := saml.ParseEncodedResponse(x)
+	parsedResp, err := saml.ParseResponse(out)
 	s.NoError(err)
 
 	s.ValidateResponse(parsedResp, true)
+}
+
+func (s *ResponseSuite) TestEncoded() {
+	out, err := s.resp.EncodedString()
+	s.NoError(err)
+
+	parsedResp, err := saml.ParseEncodedResponse(out)
+	s.NoError(err)
+
+	s.ValidateResponse(parsedResp, false)
+}
+
+func (s *ResponseSuite) TestCompressedEncoded() {
+	out, err := s.resp.CompressedEncodedString()
+	s.NoError(err)
+
+	parsedResp, err := saml.ParseEncodedResponse(out)
+	s.NoError(err)
+
+	s.ValidateResponse(parsedResp, false)
 }
 
 func TestResponseSuite(t *testing.T) {

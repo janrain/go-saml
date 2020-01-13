@@ -3,8 +3,6 @@ package saml
 import (
 	"crypto/rsa"
 	"crypto/x509"
-	"encoding/base64"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"net/url"
@@ -26,103 +24,6 @@ type ServiceProvider struct {
 	CompressRequest             bool
 }
 
-// EntityDescriptor creates an EntityDescriptor object
-func (sp *ServiceProvider) EntityDescriptor() *EntityDescriptor {
-	cert := sp.EncodedPublicCert()
-	return &EntityDescriptor{
-		XMLName: xml.Name{
-			Local: "md:EntityDescriptor",
-		},
-		DS:       "http://www.w3.org/2000/09/xmldsig#",
-		XMLNS:    "urn:oasis:names:tc:SAML:2.0:metadata",
-		MD:       "urn:oasis:names:tc:SAML:2.0:metadata",
-		EntityID: sp.AssertionConsumerServiceURL,
-		Extensions: Extensions{
-			XMLName: xml.Name{
-				Local: "md:Extensions",
-			},
-			Alg:    "urn:oasis:names:tc:SAML:metadata:algsupport",
-			MDAttr: "urn:oasis:names:tc:SAML:metadata:attribute",
-			MDRPI:  "urn:oasis:names:tc:SAML:metadata:rpi",
-		},
-		SPSSODescriptor: SPSSODescriptor{
-			ProtocolSupportEnumeration: "urn:oasis:names:tc:SAML:2.0:protocol",
-			SigningKeyDescriptor: KeyDescriptor{
-				XMLName: xml.Name{
-					Local: "md:KeyDescriptor",
-				},
-
-				Use: "signing",
-				KeyInfo: KeyInfo{
-					XMLName: xml.Name{
-						Local: "ds:KeyInfo",
-					},
-					X509Data: X509Data{
-						XMLName: xml.Name{
-							Local: "ds:X509Data",
-						},
-						X509Certificate: X509Certificate{
-							XMLName: xml.Name{
-								Local: "ds:X509Certificate",
-							},
-							Cert: cert,
-						},
-					},
-				},
-			},
-			EncryptionKeyDescriptor: KeyDescriptor{
-				XMLName: xml.Name{
-					Local: "md:KeyDescriptor",
-				},
-
-				Use: "encryption",
-				KeyInfo: KeyInfo{
-					XMLName: xml.Name{
-						Local: "ds:KeyInfo",
-					},
-					X509Data: X509Data{
-						XMLName: xml.Name{
-							Local: "ds:X509Data",
-						},
-						X509Certificate: X509Certificate{
-							XMLName: xml.Name{
-								Local: "ds:X509Certificate",
-							},
-							Cert: cert,
-						},
-					},
-				},
-			},
-			AssertionConsumerServices: []AssertionConsumerService{
-				{
-					XMLName: xml.Name{
-						Local: "md:AssertionConsumerService",
-					},
-					Binding:  "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
-					Location: sp.AssertionConsumerServiceURL,
-					Index:    "0",
-				},
-			},
-		},
-	}
-}
-
-// EncodedPublicCert returns the public cert as base64 encoded string
-func (sp *ServiceProvider) EncodedPublicCert() string {
-	return base64.StdEncoding.EncodeToString(sp.PublicCert.Raw)
-}
-
-// EntityDescriptorXML generates the SP metadata XML doc
-func (sp *ServiceProvider) EntityDescriptorXML() (string, error) {
-	ed := sp.EntityDescriptor()
-	b, err := xml.MarshalIndent(ed, "", "\t")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal xml: %w", err)
-	}
-
-	return fmt.Sprintf("<?xml version='1.0' encoding='UTF-8'?>\n%s", b), nil
-}
-
 // AuthnRequest creates an AuthnRequest object
 func (sp *ServiceProvider) AuthnRequest() *AuthnRequest {
 	return NewAuthnRequest(sp.IssuerURL, sp.AssertionConsumerServiceURL, sp.IDPSSOURL)
@@ -131,10 +32,10 @@ func (sp *ServiceProvider) AuthnRequest() *AuthnRequest {
 // EncodeAuthnRequest returns an encoded AuthnRequest
 func (sp *ServiceProvider) EncodeAuthnRequest(ar *AuthnRequest) (string, error) {
 	if sp.SignRequest {
-		if sp.CompressRequest {
-			return ar.CompressedEncodedSignedString("/AuthnRequest", sp.PrivateKey, sp.PublicCert)
+		err := ar.Sign(sp.PrivateKey, sp.PublicCert)
+		if err != nil {
+			return "", err
 		}
-		return ar.EncodedSignedString("/AuthnRequest", sp.PrivateKey, sp.PublicCert)
 	}
 	if sp.CompressRequest {
 		return ar.CompressedEncodedString()
@@ -191,15 +92,5 @@ func (sp *ServiceProvider) ValidateResponse(resp *Response) error {
 		return fmt.Errorf("assertion expired on: %s", resp.Assertion.Subject.SubjectConfirmation.SubjectConfirmationData.NotOnOrAfter)
 	}
 
-	// check for signature in root then in assertion
-	var path string
-	if len(resp.Signature.SignatureValue.Value) > 0 {
-		path = "/Response"
-	} else if len(resp.Assertion.Signature.SignatureValue.Value) > 0 {
-		path = "/Response/Assertion"
-	} else {
-		return errors.New("no signature found")
-	}
-
-	return resp.VerifySignature(path, []*x509.Certificate{sp.IDPPublicCert})
+	return resp.ValidateSignature([]*x509.Certificate{sp.IDPPublicCert})
 }

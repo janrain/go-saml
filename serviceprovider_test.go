@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/janrain/go-saml"
-	"github.com/janrain/go-saml/util"
+	"github.com/janrain/go-saml/testutil"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -19,7 +19,7 @@ type ServiceProviderSuite struct {
 }
 
 func (s *ServiceProviderSuite) SetupSuite() {
-	s.privateKey, s.publicCert = util.TestKeyPair()
+	s.privateKey, s.publicCert = testutil.TestKeyPair()
 	s.sp = &saml.ServiceProvider{
 		AssertionConsumerServiceURL: "http://localhost:8080/callback",
 		IssuerURL:                   "http://localhost:8080",
@@ -50,10 +50,11 @@ func (s *ServiceProviderSuite) TestAuthnRequestURL() {
 
 func (s *ServiceProviderSuite) TestValidateResponse() {
 	resp := saml.NewResponse(s.sp.IDPSSOURL, s.sp.IssuerURL, s.sp.AssertionConsumerServiceURL, "myuserid")
-	x, err := resp.SignedString("/Response", s.privateKey, s.publicCert)
+	resp.SignResponse(s.privateKey, s.publicCert)
+	out, err := resp.String()
 	s.NoError(err)
 
-	parsedResp, err := saml.ParseResponse(x)
+	parsedResp, err := saml.ParseResponse(out)
 	s.NoError(err)
 
 	err = s.sp.ValidateResponse(parsedResp)

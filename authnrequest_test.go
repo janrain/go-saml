@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/janrain/go-saml"
-	"github.com/janrain/go-saml/util"
+	"github.com/janrain/go-saml/testutil"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -15,7 +15,6 @@ const (
 	arACS         = "http://localhost/acs"
 	arIssuer      = "http://localhost"
 	arDestination = "http://idp.test"
-	arXPath       = "/AuthnRequest"
 )
 
 type AuthnRequestSuite struct {
@@ -23,62 +22,63 @@ type AuthnRequestSuite struct {
 	privateKey *rsa.PrivateKey
 	publicCert *x509.Certificate
 	ar         *saml.AuthnRequest
+	signed     bool
 }
 
 func (s *AuthnRequestSuite) SetupSuite() {
-	s.privateKey, s.publicCert = util.TestKeyPair()
+	s.privateKey, s.publicCert = testutil.TestKeyPair()
+}
+
+func (s *AuthnRequestSuite) SetupTest() {
 	s.ar = saml.NewAuthnRequest(arIssuer, arACS, arDestination)
 }
 
-func (s *AuthnRequestSuite) ValidateAuthnRequest(ar *saml.AuthnRequest, signed bool) {
-	s.Equal(arACS, ar.AssertionConsumerServiceURL)
-	s.Equal(arIssuer, ar.Issuer.Value)
-	s.Equal(arDestination, ar.Destination)
+func (s *AuthnRequestSuite) ValidateAuthnRequest() {
+	s.Equal(arACS, s.ar.AssertionConsumerServiceURL)
+	s.Equal(arIssuer, s.ar.Issuer.Value)
+	s.Equal(arDestination, s.ar.Destination)
 
-	if signed {
-		err := ar.VerifySignature(arXPath, []*x509.Certificate{s.publicCert})
+	if s.signed {
+		err := s.ar.ValidateSignature([]*x509.Certificate{s.publicCert})
 		s.NoError(err)
 	}
 }
 
-func (s *AuthnRequestSuite) TestSignedString() {
-	x, err := s.ar.SignedString(arXPath, s.privateKey, s.publicCert)
+func (s *AuthnRequestSuite) TestSigned() {
+	err := s.ar.Sign(s.privateKey, s.publicCert)
+	s.NoError(err)
+	s.NotNil(s.ar.Signature)
+	s.signed = true
+
+	s.ValidateAuthnRequest()
+
+	out, err := s.ar.String()
 	s.NoError(err)
 
-	parsedAr, err := saml.ParseAuthnRequest(x)
+	s.ar, err = saml.ParseAuthnRequest(out)
 	s.NoError(err)
 
-	s.ValidateAuthnRequest(parsedAr, true)
+	s.ValidateAuthnRequest()
 }
 
-func (s *AuthnRequestSuite) TestEncodedString() {
-	x, err := s.ar.EncodedString()
+func (s *AuthnRequestSuite) TestEncoded() {
+	out, err := s.ar.EncodedString()
 	s.NoError(err)
 
-	parsedAr, err := saml.ParseEncodedAuthnRequest(x)
+	s.ar, err = saml.ParseEncodedAuthnRequest(out)
 	s.NoError(err)
 
-	s.ValidateAuthnRequest(parsedAr, false)
+	s.ValidateAuthnRequest()
 }
 
-func (s *AuthnRequestSuite) TestCompressedEncodedString() {
-	x, err := s.ar.CompressedEncodedString()
+func (s *AuthnRequestSuite) TestCompressedEncoded() {
+	out, err := s.ar.CompressedEncodedString()
 	s.NoError(err)
 
-	parsedAr, err := saml.ParseEncodedAuthnRequest(x)
+	s.ar, err = saml.ParseEncodedAuthnRequest(out)
 	s.NoError(err)
 
-	s.ValidateAuthnRequest(parsedAr, false)
-}
-
-func (s *AuthnRequestSuite) TestCompressedEncodedSignedString() {
-	x, err := s.ar.CompressedEncodedSignedString(arXPath, s.privateKey, s.publicCert)
-	s.NoError(err)
-
-	parsedAr, err := saml.ParseEncodedAuthnRequest(x)
-	s.NoError(err)
-
-	s.ValidateAuthnRequest(parsedAr, true)
+	s.ValidateAuthnRequest()
 }
 
 func TestAuthnRequestSuite(t *testing.T) {

@@ -9,7 +9,6 @@ The library supports:
 
 * generating signed/unsigned AuthnRequests and Responses
 * validating signed AuthnRequests and Responses
-* generating service provider metadata
 
 Usage
 -----

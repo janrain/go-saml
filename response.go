@@ -5,11 +5,14 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/janrain/go-saml/util"
 	"github.com/janrain/go-saml/xmldsig"
+
+	"github.com/beevik/etree"
 )
 
 // ParseResponse parses a SAML Response
@@ -49,95 +52,48 @@ func ParseEncodedResponse(encodedXML string) (*Response, error) {
 func NewResponse(issuer, audience, destination, subject string) *Response {
 	now := time.Now().UTC()
 	return &Response{
-		XMLName: xml.Name{
-			Local: "samlp:Response",
-		},
-		SAMLP:        "urn:oasis:names:tc:SAML:2.0:protocol",
 		ID:           util.ID(),
 		Version:      "2.0",
 		IssueInstant: now.Format(time.RFC3339Nano),
-		Issuer: Issuer{
-			XMLName: xml.Name{
-				Local: "saml:Issuer",
-			},
-			SAML:  "urn:oasis:names:tc:SAML:2.0:assertion",
+		Issuer: &Issuer{
 			Value: issuer,
 		},
 		Destination: destination,
 		Status: Status{
-			XMLName: xml.Name{
-				Local: "samlp:Status",
-			},
 			StatusCode: StatusCode{
-				XMLName: xml.Name{
-					Local: "samlp:StatusCode",
-				},
 				Value: "urn:oasis:names:tc:SAML:2.0:status:Success",
 			},
 		},
-		Assertion: Assertion{
-			XMLName: xml.Name{
-				Local: "saml:Assertion",
-			},
-			XS:           "http://www.w3.org/2001/XMLSchema",
-			XSI:          "http://www.w3.org/2001/XMLSchema-instance",
-			SAML:         "urn:oasis:names:tc:SAML:2.0:assertion",
+		Assertion: &Assertion{
 			Version:      "2.0",
 			ID:           util.ID(),
 			IssueInstant: now.Format(time.RFC3339Nano),
 			Issuer: Issuer{
-				XMLName: xml.Name{
-					Local: "saml:Issuer",
-				},
 				Value: issuer,
 			},
-			Subject: Subject{
-				XMLName: xml.Name{
-					Local: "saml:Subject",
-				},
-				NameID: NameID{
-					XMLName: xml.Name{
-						Local: "saml:NameID",
-					},
+			Subject: &Subject{
+				NameID: &NameID{
 					Format: "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified",
 					Value:  subject,
 				},
-				SubjectConfirmation: SubjectConfirmation{
-					XMLName: xml.Name{
-						Local: "saml:SubjectConfirmation",
-					},
+				SubjectConfirmation: &SubjectConfirmation{
 					Method: "urn:oasis:names:tc:SAML:2.0:cm:bearer",
-					SubjectConfirmationData: SubjectConfirmationData{
-						XMLName: xml.Name{
-							Local: "saml:SubjectConfirmationData",
-						},
+					SubjectConfirmationData: &SubjectConfirmationData{
 						NotOnOrAfter: now.Add(time.Minute * 5).Format(time.RFC3339Nano),
 						Recipient:    destination,
 					},
 				},
 			},
-			Conditions: Conditions{
-				XMLName: xml.Name{
-					Local: "saml:Conditions",
-				},
+			Conditions: &Conditions{
 				NotBefore:    now.Add(time.Minute * -5).Format(time.RFC3339Nano),
 				NotOnOrAfter: now.Add(time.Minute * 5).Format(time.RFC3339Nano),
-				AudienceRestriction: AudienceRestriction{
-					XMLName: xml.Name{
-						Local: "saml:AudienceRestriction",
-					},
+				AudienceRestriction: &AudienceRestriction{
 					Audience: Audience{
-						XMLName: xml.Name{
-							Local: "saml:Audience",
-						},
 						Value: audience,
 					},
 				},
 			},
-			AttributeStatement: AttributeStatement{
-				XMLName: xml.Name{
-					Local: "saml:AttributeStatement",
-				},
+			AttributeStatement: &AttributeStatement{
 				Attributes: []Attribute{},
 			},
 		},
@@ -147,16 +103,10 @@ func NewResponse(issuer, audience, destination, subject string) *Response {
 // AddAttribute adds an attribute to the response assertion
 func (resp *Response) AddAttribute(name, value string) {
 	resp.Assertion.AttributeStatement.Attributes = append(resp.Assertion.AttributeStatement.Attributes, Attribute{
-		XMLName: xml.Name{
-			Local: "saml:Attribute",
-		},
 		Name:       name,
 		NameFormat: "urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified",
 		AttributeValues: []AttributeValue{
 			{
-				XMLName: xml.Name{
-					Local: "saml:AttributeValue",
-				},
 				Type:  "xs:string",
 				Value: value,
 			},
@@ -164,43 +114,31 @@ func (resp *Response) AddAttribute(name, value string) {
 	})
 }
 
+// SignAssertion adds a signature to the assertion
+func (resp *Response) SignAssertion(privateKey *rsa.PrivateKey, publicCert *x509.Certificate) error {
+	sig, err := xmldsig.Sign(resp.Assertion.Element(), privateKey, publicCert)
+	if err != nil {
+		return err
+	}
+	resp.Assertion.Signature = sig
+	return nil
+}
+
+// SignResponse adds a signature to the response
+func (resp *Response) SignResponse(privateKey *rsa.PrivateKey, publicCert *x509.Certificate) error {
+	sig, err := xmldsig.Sign(resp.Element(), privateKey, publicCert)
+	if err != nil {
+		return err
+	}
+	resp.Signature = sig
+	return nil
+}
+
 // String returns the response as a string
 func (resp *Response) String() (string, error) {
-	b, err := xml.MarshalIndent(resp, "", "    ")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal xml: %w", err)
-	}
-
-	return string(b), nil
-}
-
-// SignedString returns the response as a string with signature included
-func (resp *Response) SignedString(xPath string, privateKey *rsa.PrivateKey, publicCert *x509.Certificate) (string, error) {
-	s, err := resp.String()
-	if err != nil {
-		return "", err
-	}
-
-	return xmldsig.Sign(s, xPath, privateKey, publicCert)
-}
-
-// EncodedSignedString returns the response base64 encoded and signed
-func (resp *Response) EncodedSignedString(xPath string, privateKey *rsa.PrivateKey, publicCert *x509.Certificate) (string, error) {
-	signed, err := resp.SignedString(xPath, privateKey, publicCert)
-	if err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString([]byte(signed)), nil
-}
-
-// CompressedEncodedSignedString returns the response compressed, base64 encoded, and signed
-func (resp *Response) CompressedEncodedSignedString(xPath string, privateKey *rsa.PrivateKey, publicCert *x509.Certificate) (string, error) {
-	signed, err := resp.SignedString(xPath, privateKey, publicCert)
-	if err != nil {
-		return "", err
-	}
-	compressed := util.Compress([]byte(signed))
-	return base64.StdEncoding.EncodeToString(compressed), nil
+	doc := etree.NewDocument()
+	doc.SetRoot(resp.Element())
+	return doc.WriteToString()
 }
 
 // EncodedString returns the response base64 encoded
@@ -222,7 +160,75 @@ func (resp *Response) CompressedEncodedString() (string, error) {
 	return base64.StdEncoding.EncodeToString(compressed), nil
 }
 
-// VerifySignature verifies the signature
-func (resp *Response) VerifySignature(xPath string, certs []*x509.Certificate) error {
-	return xmldsig.VerifySignature(resp.originalString, xPath, certs)
+// ValidateSignature checks signed elements in the response.
+// There may be a signature on the Response element, Assertion element, or both.
+// At least one signature must be present and all signatures must be valid.
+func (resp *Response) ValidateSignature(certs []*x509.Certificate) error {
+	// if this is a parsed response the signatures will be missing
+	// so we have to use the original xml
+	if resp.originalString != "" {
+		return ValidateResponseSignature(resp.originalString, certs)
+	}
+	foundSignature := false
+	if resp.Signature != nil {
+		if err := xmldsig.VerifySignature(resp.Element(), certs); err != nil {
+			return fmt.Errorf("signature invalid for Response element: %w", err)
+		}
+		foundSignature = true
+	}
+	if resp.Assertion.Signature != nil {
+		if err := xmldsig.VerifySignature(resp.Assertion.Element(), certs); err != nil {
+			return fmt.Errorf("signature invalid for Assertion element: %w", err)
+		}
+		foundSignature = true
+	}
+	if !foundSignature {
+		return errors.New("signature not found in Response or Assertion")
+	}
+	return nil
+}
+
+// ValidateResponseSignature checks signed elements in a Response XML document.
+// There may be a signature in the Response element, Assertion element, or both.
+// At least one signature must be present and all signatures must be valid.
+func ValidateResponseSignature(rawXML string, certs []*x509.Certificate) error {
+	foundSignature := false
+
+	doc := etree.NewDocument()
+	err := doc.ReadFromString(rawXML)
+	if err != nil {
+		return err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return errors.New("root element not found")
+	}
+	if root.Tag != "Response" {
+		return fmt.Errorf("root element is not Response, found %s instead", root.Tag)
+	}
+
+	for _, rootChild := range root.ChildElements() {
+		if rootChild.Tag == "Signature" {
+			if err := xmldsig.VerifySignature(root, certs); err != nil {
+				return fmt.Errorf("signature invalid for Response element: %w", err)
+			}
+			foundSignature = true
+		}
+		if rootChild.Tag == "Assertion" {
+			for _, assertionChild := range rootChild.ChildElements() {
+				if assertionChild.Tag == "Signature" {
+					if err := xmldsig.VerifySignature(rootChild, certs); err != nil {
+						return fmt.Errorf("signature invalid for Assertion element: %w", err)
+					}
+					foundSignature = true
+				}
+			}
+		}
+	}
+
+	if !foundSignature {
+		return errors.New("signature not found in Response or Assertion")
+	}
+	return nil
 }

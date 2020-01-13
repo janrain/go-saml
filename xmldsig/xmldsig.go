@@ -4,7 +4,6 @@ import (
 	"crypto"
 	"crypto/rsa"
 	"crypto/x509"
-	"fmt"
 
 	"github.com/beevik/etree"
 	"github.com/russellhaering/goxmldsig"
@@ -26,25 +25,8 @@ func (ks keyStore) GetKeyPair() (*rsa.PrivateKey, []byte, error) {
 	return ks.privateKey, ks.publicCert.Raw, nil
 }
 
-// Sign adds a signature to the xml document element at specified XPath
-func Sign(rawXML, xPath string, privateKey *rsa.PrivateKey, publicCert *x509.Certificate) (string, error) {
-	doc := etree.NewDocument()
-	if err := doc.ReadFromString(rawXML); err != nil {
-		return "", fmt.Errorf("failed to parse xml: %w", err)
-	}
-
-	root := doc.Root()
-	element := root.FindElement(xPath)
-	if element == nil {
-		return "", fmt.Errorf("xml element not found at path: %s", xPath)
-	}
-	// remove existing signatures
-	for _, e := range element.ChildElements() {
-		if e.Tag == "Signature" {
-			element.RemoveChild(e)
-		}
-	}
-
+// Sign creates a signature for the given xml element and returns the signature
+func Sign(element *etree.Element, privateKey *rsa.PrivateKey, publicCert *x509.Certificate) (*etree.Element, error) {
 	signingCtx := &dsig.SigningContext{
 		Hash: crypto.SHA1,
 		KeyStore: keyStore{
@@ -57,46 +39,21 @@ func Sign(rawXML, xPath string, privateKey *rsa.PrivateKey, publicCert *x509.Cer
 	}
 	signedElement, err := signingCtx.SignEnveloped(element)
 	if err != nil {
-		return "", fmt.Errorf("failed to sign xml element at path %s: %w", xPath, err)
+		return nil, err
 	}
 
-	// remove unsigned element and add signed version
-	parent := element.Parent()
-	var idx int
-	for i, e := range parent.ChildElements() {
-		if e == element {
-			idx = i
-			parent.RemoveChild(e)
-		}
-	}
-	parent.InsertChildAt(idx, signedElement)
-
-	out, err := doc.WriteToString()
-	if err != nil {
-		return "", fmt.Errorf("failed to generate signed xml: %w", err)
-	}
-	return out, nil
+	return signedElement.Child[len(signedElement.Child)-1].(*etree.Element), nil
 }
 
-// VerifySignature checks the signature in the xml document at the specified XPath
-func VerifySignature(rawXML, xPath string, certs []*x509.Certificate) error {
-	doc := etree.NewDocument()
-	if err := doc.ReadFromString(rawXML); err != nil {
-		return fmt.Errorf("failed to parse xml: %w", err)
-	}
-
-	element := doc.Root().FindElement(xPath)
-	if element == nil {
-		return fmt.Errorf("xml element not found at path %s", xPath)
-	}
-
+// VerifySignature checks the signature in the xml element
+func VerifySignature(element *etree.Element, certs []*x509.Certificate) error {
 	validationCtx := &dsig.ValidationContext{
 		CertificateStore: &dsig.MemoryX509CertificateStore{Roots: certs},
 		IdAttribute:      idAttribute,
 	}
 
 	if _, err := validationCtx.Validate(element); err != nil {
-		return fmt.Errorf("failed to validate xml signature at path %s: %w", xPath, err)
+		return err
 	}
 
 	return nil

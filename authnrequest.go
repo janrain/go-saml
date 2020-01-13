@@ -5,11 +5,14 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/janrain/go-saml/util"
 	"github.com/janrain/go-saml/xmldsig"
+
+	"github.com/beevik/etree"
 )
 
 // ParseAuthnRequest parses a SAML AuthnRequest
@@ -47,86 +50,48 @@ func ParseEncodedAuthnRequest(encodedXML string) (*AuthnRequest, error) {
 // acs should be the SP ACS URL
 // destination should IDP URL
 func NewAuthnRequest(issuer, acs, destination string) *AuthnRequest {
+	ac := true
+	allowCreate := &ac
+	f := "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"
+	format := &f
 	return &AuthnRequest{
-		XMLName: xml.Name{
-			Local: "samlp:AuthnRequest",
-		},
-		SAMLP:                       "urn:oasis:names:tc:SAML:2.0:protocol",
-		SAML:                        "urn:oasis:names:tc:SAML:2.0:assertion",
 		ID:                          util.ID(),
 		ProtocolBinding:             "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
 		Version:                     "2.0",
 		AssertionConsumerServiceURL: acs,
 		Destination:                 destination,
-		Issuer: Issuer{
-			XMLName: xml.Name{
-				Local: "saml:Issuer",
-			},
-			SAML:  "urn:oasis:names:tc:SAML:2.0:assertion",
+		Issuer: &Issuer{
 			Value: issuer,
 		},
 		IssueInstant: time.Now().UTC().Format(time.RFC3339),
-		NameIDPolicy: NameIDPolicy{
-			XMLName: xml.Name{
-				Local: "samlp:NameIDPolicy",
-			},
-			AllowCreate: true,
-			Format:      "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified",
+		NameIDPolicy: &NameIDPolicy{
+			AllowCreate: allowCreate,
+			Format:      format,
 		},
-		RequestedAuthnContext: RequestedAuthnContext{
-			XMLName: xml.Name{
-				Local: "samlp:RequestedAuthnContext",
-			},
-			SAMLP:      "urn:oasis:names:tc:SAML:2.0:protocol",
+		RequestedAuthnContext: &RequestedAuthnContext{
 			Comparison: "exact",
-			AuthnContextClassRef: AuthnContextClassRef{
-				XMLName: xml.Name{
-					Local: "saml:AuthnContextClassRef",
-				},
-				SAML:      "urn:oasis:names:tc:SAML:2.0:assertion",
+			AuthnContextClassRef: &AuthnContextClassRef{
 				Transport: "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport",
 			},
 		},
 	}
 }
 
+// Sign adds a signature to the request
+func (ar *AuthnRequest) Sign(privateKey *rsa.PrivateKey, publicCert *x509.Certificate) error {
+	sig, err := xmldsig.Sign(ar.Element(), privateKey, publicCert)
+	if err != nil {
+		return err
+	}
+	ar.Signature = sig
+	return nil
+}
+
 // String returns the request as a string
 func (ar *AuthnRequest) String() (string, error) {
-	b, err := xml.MarshalIndent(ar, "", "\t")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal xml: %w", err)
-	}
-
-	return string(b), nil
-}
-
-// SignedString returns the request as a string with signature included
-func (ar *AuthnRequest) SignedString(xPath string, privateKey *rsa.PrivateKey, publicCert *x509.Certificate) (string, error) {
-	s, err := ar.String()
-	if err != nil {
-		return "", err
-	}
-
-	return xmldsig.Sign(s, xPath, privateKey, publicCert)
-}
-
-// EncodedSignedString returns the request base64 encoded and signed
-func (ar *AuthnRequest) EncodedSignedString(xPath string, privateKey *rsa.PrivateKey, publicCert *x509.Certificate) (string, error) {
-	signed, err := ar.SignedString(xPath, privateKey, publicCert)
-	if err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString([]byte(signed)), nil
-}
-
-// CompressedEncodedSignedString returns the request compressed, base64 encoded, and signed
-func (ar *AuthnRequest) CompressedEncodedSignedString(xPath string, privateKey *rsa.PrivateKey, publicCert *x509.Certificate) (string, error) {
-	signed, err := ar.SignedString(xPath, privateKey, publicCert)
-	if err != nil {
-		return "", err
-	}
-	compressed := util.Compress([]byte(signed))
-	return base64.StdEncoding.EncodeToString(compressed), nil
+	doc := etree.NewDocument()
+	doc.SetRoot(ar.Element())
+	return doc.WriteToString()
 }
 
 // EncodedString returns the request base64 encoded
@@ -148,7 +113,40 @@ func (ar *AuthnRequest) CompressedEncodedString() (string, error) {
 	return base64.StdEncoding.EncodeToString(compressed), nil
 }
 
-// VerifySignature verifies the signature
-func (ar *AuthnRequest) VerifySignature(xPath string, certs []*x509.Certificate) error {
-	return xmldsig.VerifySignature(ar.originalString, xPath, certs)
+// ValidateSignature checks the signature in the request
+func (ar *AuthnRequest) ValidateSignature(certs []*x509.Certificate) error {
+	// if this is a parsed request the signature will be missing
+	// so we have to use the original xml
+	if ar.originalString != "" {
+		return ValidateAuthnRequestSignature(ar.originalString, certs)
+	}
+	if ar.Signature != nil {
+		return xmldsig.VerifySignature(ar.Element(), certs)
+	}
+	return errors.New("signature not found")
+}
+
+// ValidateResponseSignature verifies signature(s) in a AuthnRequest XML document.
+func ValidateAuthnRequestSignature(rawXML string, certs []*x509.Certificate) error {
+	doc := etree.NewDocument()
+	err := doc.ReadFromString(rawXML)
+	if err != nil {
+		return err
+	}
+
+	root := doc.Root()
+	if root == nil {
+		return errors.New("root element not found")
+	}
+	if root.Tag != "AuthnRequest" {
+		return fmt.Errorf("root element is not AuthnRequest, found %s instead", root.Tag)
+	}
+
+	for _, rootChild := range root.ChildElements() {
+		if rootChild.Tag == "Signature" {
+			return xmldsig.VerifySignature(root, certs)
+		}
+	}
+
+	return errors.New("signature not found")
 }
