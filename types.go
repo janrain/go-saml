@@ -132,13 +132,13 @@ func (r *RequestedAuthnContext) Element() *etree.Element {
 type AuthnContextClassRef struct {
 	XMLName xml.Name `xml:"urn:oasis:names:tc:SAML:2.0:assertion AuthnContextClassRef"`
 
-	Transport string `xml:",chardata"`
+	Value string `xml:",chardata"`
 }
 
 // Element returns AuthnContextClassRef as etree.Element
 func (r *AuthnContextClassRef) Element() *etree.Element {
 	e := etree.NewElement("saml:AuthnContextClassRef")
-	e.SetText(r.Transport)
+	e.SetText(r.Value)
 	return e
 }
 
@@ -238,6 +238,7 @@ type Assertion struct {
 	Signature          *etree.Element
 	Subject            *Subject
 	Conditions         *Conditions
+	AuthnStatement     *AuthnStatement
 	AttributeStatement *AttributeStatement
 }
 
@@ -261,53 +262,6 @@ func (r *Assertion) Element() *etree.Element {
 	if r.AttributeStatement != nil {
 		e.AddChild(r.AttributeStatement.Element())
 	}
-	return e
-}
-
-// Conditions represents a SAML Conditions
-type Conditions struct {
-	NotBefore    string `xml:",attr"`
-	NotOnOrAfter string `xml:",attr"`
-
-	AudienceRestriction *AudienceRestriction
-}
-
-// Element returns Conditions as etree.Element
-func (r *Conditions) Element() *etree.Element {
-	e := etree.NewElement("saml:Conditions")
-	if r.NotBefore != "" {
-		e.CreateAttr("NotBefore", r.NotBefore)
-	}
-	if r.NotOnOrAfter != "" {
-		e.CreateAttr("NotOnOrAfter", r.NotOnOrAfter)
-	}
-	if r.AudienceRestriction != nil {
-		e.AddChild(r.AudienceRestriction.Element())
-	}
-	return e
-}
-
-// AudienceRestriction represents a SAML AudienceRestriction
-type AudienceRestriction struct {
-	Audience Audience
-}
-
-// Element returns AudienceRestriction as etree.Element
-func (r *AudienceRestriction) Element() *etree.Element {
-	e := etree.NewElement("saml:AudienceRestriction")
-	e.AddChild(r.Audience.Element())
-	return e
-}
-
-// Audience represents a SAML Audience
-type Audience struct {
-	Value string `xml:",chardata"`
-}
-
-// Element returns Audience as etree.Element
-func (r *Audience) Element() *etree.Element {
-	e := etree.NewElement("saml:Audience")
-	e.SetText(r.Value)
 	return e
 }
 
@@ -396,6 +350,89 @@ func (r *NameID) Element() *etree.Element {
 	}
 	if r.Value != "" {
 		e.SetText(r.Value)
+	}
+	return e
+}
+
+// Conditions represents a SAML Conditions
+type Conditions struct {
+	NotBefore    string `xml:",attr"`
+	NotOnOrAfter string `xml:",attr"`
+
+	AudienceRestriction *AudienceRestriction
+}
+
+// Element returns Conditions as etree.Element
+func (r *Conditions) Element() *etree.Element {
+	e := etree.NewElement("saml:Conditions")
+	if r.NotBefore != "" {
+		e.CreateAttr("NotBefore", r.NotBefore)
+	}
+	if r.NotOnOrAfter != "" {
+		e.CreateAttr("NotOnOrAfter", r.NotOnOrAfter)
+	}
+	if r.AudienceRestriction != nil {
+		e.AddChild(r.AudienceRestriction.Element())
+	}
+	return e
+}
+
+// AudienceRestriction represents a SAML AudienceRestriction
+type AudienceRestriction struct {
+	Audience Audience
+}
+
+// Element returns AudienceRestriction as etree.Element
+func (r *AudienceRestriction) Element() *etree.Element {
+	e := etree.NewElement("saml:AudienceRestriction")
+	e.AddChild(r.Audience.Element())
+	return e
+}
+
+// Audience represents a SAML Audience
+type Audience struct {
+	Value string `xml:",chardata"`
+}
+
+// Element returns Audience as etree.Element
+func (r *Audience) Element() *etree.Element {
+	e := etree.NewElement("saml:Audience")
+	e.SetText(r.Value)
+	return e
+}
+
+// AuthnStatement represents a SAML AuthnStatement
+type AuthnStatement struct {
+	AuthnInstant        string `xml:",attr"`
+	SessionIndex        string `xml:",attr"`
+	SessionNotOnOrAfter string `xml:",attr"`
+	AuthnContext        AuthnContext
+}
+
+// Element returns AuthnStatement as etree.Element
+func (r *AuthnStatement) Element() *etree.Element {
+	e := etree.NewElement("saml:AuthnStatement")
+	e.CreateAttr("AuthnInstant", r.AuthnInstant)
+	if r.SessionIndex != "" {
+		e.CreateAttr("SessionIndex", r.SessionIndex)
+	}
+	if r.SessionNotOnOrAfter != "" {
+		e.CreateAttr("SessionNotOnOrAfter", r.SessionNotOnOrAfter)
+	}
+	e.AddChild(r.AuthnContext.Element())
+	return e
+}
+
+// AuthnContext represents a SAML AuthnContext
+type AuthnContext struct {
+	AuthnContextClassRef *AuthnContextClassRef
+}
+
+// Element returns AuthnContext as etree.Element
+func (r *AuthnContext) Element() *etree.Element {
+	e := etree.NewElement("saml:AuthnContext")
+	if r.AuthnContextClassRef != nil {
+		e.AddChild(r.AuthnContextClassRef.Element())
 	}
 	return e
 }

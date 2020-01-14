@@ -71,7 +71,7 @@ func NewAuthnRequest(issuer, acs, destination string) *AuthnRequest {
 		RequestedAuthnContext: &RequestedAuthnContext{
 			Comparison: "exact",
 			AuthnContextClassRef: &AuthnContextClassRef{
-				Transport: "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport",
+				Value: "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport",
 			},
 		},
 	}

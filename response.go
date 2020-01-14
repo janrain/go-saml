@@ -93,6 +93,13 @@ func NewResponse(issuer, audience, destination, subject string) *Response {
 					},
 				},
 			},
+			AuthnStatement: &AuthnStatement{
+				AuthnContext: AuthnContext{
+					AuthnContextClassRef: &AuthnContextClassRef{
+						Value: "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport",
+					},
+				},
+			},
 			AttributeStatement: &AttributeStatement{
 				Attributes: []Attribute{},
 			},
