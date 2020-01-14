@@ -126,7 +126,7 @@ func (ar *AuthnRequest) ValidateSignature(certs []*x509.Certificate) error {
 	return errors.New("signature not found")
 }
 
-// ValidateResponseSignature verifies signature(s) in a AuthnRequest XML document.
+// ValidateAuthnRequestSignature verifies signature(s) in a AuthnRequest XML document.
 func ValidateAuthnRequestSignature(rawXML string, certs []*x509.Certificate) error {
 	doc := etree.NewDocument()
 	err := doc.ReadFromString(rawXML)
